@@ -1,0 +1,21 @@
+module inv(a -> y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+
+module nand2(a, b -> y) {
+  Pmos(a, Vcc, y)
+  Pmos(b, Vcc, y)
+  Nmos(a, y, _0)
+  Nmos(b, _0, Gnd)
+}
+
+module and2(a, b -> y) {
+  nand2(a, b, _0)
+  inv(_0, y)
+}
+
+module main(a, b -> nand_y, and_y) {
+  nand2(a, b, nand_y)
+  and2(a, b, and_y)
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FetLoom — MOS switch-level simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div><strong>FetLoom</strong><span> .fetl MOS switch-level DSL / simulator</span></div>
+  <div id="status">loading…</div>
+</header>
+<main>
+  <section class="editor-pane">
+    <div class="toolbar">
+      <select id="example"></select>
+      <button id="loadExample">Load example</button>
+      <label class="file-btn">Open .fetl<input id="file" type="file" accept=".fetl,text/plain"></label>
+      <button id="compile" class="primary">Compile</button>
+    </div>
+    <textarea id="source" spellcheck="false" aria-label="FetLoom source"></textarea>
+    <pre id="errors" aria-live="polite"></pre>
+  </section>
+
+  <section class="sim-pane">
+    <div class="toolbar wrap">
+      <label>Top <select id="topModule"></select></label>
+      <button id="reset">Reset</button>
+      <button id="step">Step</button>
+      <button id="run">Run</button>
+      <label>ticks/frame <input id="speed" type="number" min="1" max="1000" value="4"></label>
+      <span id="tick">tick 0</span>
+    </div>
+    <div id="inputs" class="inputs"></div>
+    <div class="toolbar wrap">
+      <label>View <select id="view"></select></label>
+      <span class="hint">double-click a module to drill in; click a wire/port to probe</span>
+    </div>
+    <div id="schematic" class="schematic"></div>
+  </section>
+
+  <section class="probe-pane">
+    <div class="toolbar wrap">
+      <strong>Probe</strong>
+      <input id="probeSearch" placeholder="wire name">
+      <select id="probeNet"></select>
+      <button id="addProbe">Add</button>
+      <button id="clearProbe">Clear</button>
+    </div>
+    <div id="probeLabels"></div>
+    <canvas id="wave" width="1200" height="260"></canvas>
+  </section>
+</main>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

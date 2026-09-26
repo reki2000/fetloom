@@ -1,0 +1,13 @@
+module inv(a -> y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+
+// ROM/RAM are storage primitives. No Decoder primitive exists in FetLoom.
+module main(addr[4], din[8], we -> rom_data[8], ram_data[8], clk_out) {
+  Clk(8, _clk)
+  inv(_clk, _nclk)
+  inv(_nclk, clk_out)
+  Rom("examples/memory.hex", addr, rom_data)
+  Ram(addr, din, ram_data, we, _clk)
+}

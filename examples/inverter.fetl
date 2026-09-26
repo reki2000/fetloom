@@ -1,0 +1,9 @@
+// FetLoom: simplest CMOS inverter
+module inv(a -> y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+
+module main(a -> y) {
+  inv(a, y)
+}
