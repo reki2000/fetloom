@@ -186,10 +186,13 @@ layer ranges, statistics), then `Int32` records `[x, y, w, h, layer | flags << 8
 Channel rects carry `flags` 1 (NMOS) / 2 (PMOS) and the gate net so the viewer can show conduction.
 Layouts are cached by `layoutKey(source, top)`.
 
-The viewer has a mask mode and a schematic mode. The schematic is derived from the mask data at view
-time (`src/die-schematic.js`): channel rects become MOS symbols, routed metal becomes centre lines, and
-nets sharing a module path and local bus name are drawn as one thick line along the lowest routed bit,
-coloured by the aggregate value of all bits.
+The viewer has a mask mode and a schematic mode. The schematic (`src/schematic.js`) is laid out
+independently of the die: nested module boxes (inputs left, outputs right), children in longest-path
+signal-flow columns with barycentre ordering, split/folded to fill the box evenly, CMOS cells as PMOS
+over NMOS rows, child boxes scaled down to their pin needs with level-of-detail codes in bits 16..23 of
+the layer field, and a per-module grid router where wires may cross but not overlap. Nets touching the
+same set of pins form a bundle with a virtual net id (`nets + i`) whose value aggregates its bits.
+It is stored in the same container (`format: "fetloom-sch"`) and cached by `schematicKey(source, top)`.
 
 ## 10. 4004 sample policy
 

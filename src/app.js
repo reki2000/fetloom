@@ -3,7 +3,7 @@ import {loadWasm, FetLoomSimulator, logicChar} from './sim.js';
 import {availableViews, makeLayout, renderSvg} from './layout.js';
 import {EXAMPLES} from './examples.js';
 import {DieView} from './die-view.js';
-import {obtainDie, cancelDie} from './die-cache.js';
+import {obtainDie, obtainSchematic, cancelDie} from './die-cache.js';
 
 const $=s=>document.querySelector(s);
 const els={source:$('#source'),example:$('#example'),loadExample:$('#loadExample'),file:$('#file'),compile:$('#compile'),top:$('#topModule'),errors:$('#errors'),status:$('#status'),inputs:$('#inputs'),reset:$('#reset'),step:$('#step'),run:$('#run'),speed:$('#speed'),tick:$('#tick'),view:$('#view'),schematic:$('#schematic'),probeSearch:$('#probeSearch'),probeNet:$('#probeNet'),addProbe:$('#addProbe'),clearProbe:$('#clearProbe'),probeLabels:$('#probeLabels'),wave:$('#wave'),tabSchematic:$('#tabSchematic'),tabDie:$('#tabDie'),die:$('#die'),viewHint:$('#viewHint')};
@@ -32,7 +32,8 @@ function drawAll(){if(!sim)return;els.tick.textContent=`tick ${sim.tickCount}`;i
 
 // ---- die layout view
 function ensureDieView(){
-  if(!dieView) dieView=new DieView(els.die,{onProbe:n=>{sim?.toggleProbe(n);drawProbe();},getNetName:n=>circuit?.netNames[n]??String(n)});
+  if(!dieView) dieView=new DieView(els.die,{onProbe:n=>{sim?.toggleProbe(n);drawProbe();},getNetName:n=>circuit?.netNames[n]??String(n),
+    loadSchematic:async onStatus=>{const {die,from}=await obtainSchematic(compiledSource,circuit.topName,{onStatus});const st=die.header.stats;return {die,info:`${from} · ${st.bundles} buses`+(st.conflicts?` · ${st.conflicts} overlapping wire cells`:'')};}});
   return dieView;
 }
 async function loadDie(){
@@ -44,7 +45,7 @@ async function loadDie(){
     if(dieFor!==c)return;
     if(die.header.stats.nets!==c.netNames.length) throw new Error('cached layout does not match the compiled circuit');
     const st=die.header.stats;
-    view.setDie(die,`${from} · ${st.transistors} MOS · ${st.hardBlocks} blocks · wire ${st.wirelength} tracks · ${st.tunedNets} length-matched nets`+(st.overflowCells?` · ${st.overflowCells} congested cells`:''),c.netMeta);
+    view.setDie(die,`${from} · ${st.transistors} MOS · ${st.hardBlocks} blocks · wire ${st.wirelength} tracks · ${st.tunedNets} length-matched nets`+(st.overflowCells?` · ${st.overflowCells} congested cells`:''));
     view.setValueSource(n=>sim?sim.getValue(n):2);
     if(currentView&&currentView!==c.topName)view.zoomToPath(currentView);
   }catch(e){if(dieFor===c){dieFor=null;view.statusEl.textContent='layout failed';err(e);}}

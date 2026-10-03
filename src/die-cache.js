@@ -1,9 +1,10 @@
-// Two-level die layout cache:
-//   1. layouts/manifest.json + layouts/*.fdie.gz, prebuilt by `npm run layouts`
+// Two-level cache for die layouts and schematic layouts:
+//   1. layouts/manifest.json + layouts/*.fdie.gz / *.fsch.gz, prebuilt by `npm run layouts`
 //   2. IndexedDB in the browser for layouts computed on demand (Web Worker)
-// Entries are keyed by layoutKey(source, top), so any edit of the source misses the cache.
+// Entries are keyed by layoutKey / schematicKey of the source, so any edit misses the cache.
 
 import {layoutKey} from './die.js';
+import {schematicKey} from './schematic.js';
 import {decodeDie, gzip, gunzip} from './die-format.js';
 
 let manifest = null;
@@ -37,25 +38,24 @@ async function idbPut(key, value) {
   } catch { /* cache is best effort */ }
 }
 
-let worker = null;
-function compute(source, top, key, onStatus) {
-  worker?.terminate();
-  const w = worker = new Worker(new URL('./die-worker.js', import.meta.url), {type:'module'});
+const workers = {};
+function compute(kind, source, top, key, onStatus) {
+  workers[kind]?.terminate();
+  const w = workers[kind] = new Worker(new URL('./die-worker.js', import.meta.url), {type:'module'});
   return new Promise((resolve, reject) => {
     w.onmessage = e => {
-      if (e.data.progress) { onStatus?.(`computing layout: ${e.data.progress}`); return; }
-      w.terminate(); if (worker === w) worker = null;
+      if (e.data.progress) { onStatus?.(`computing: ${e.data.progress}`); return; }
+      w.terminate(); if (workers[kind] === w) delete workers[kind];
       if (e.data.error) reject(new Error(e.data.error)); else resolve(e.data.bytes);
     };
     w.onerror = e => { w.terminate(); reject(new Error(e.message || 'layout worker failed')); };
-    w.postMessage({source, top, key});
+    w.postMessage({kind, source, top, key});
   });
 }
 
-export function cancelDie() { worker?.terminate(); worker = null; }
+export function cancelDie() { for (const k of Object.keys(workers)) { workers[k].terminate(); delete workers[k]; } }
 
-export async function obtainDie(source, top, {onStatus} = {}) {
-  const key = layoutKey(source, top);
+async function obtain(kind, key, source, top, onStatus) {
   const entry = (await loadManifest()).entries?.[key];
   if (entry) {
     try {
@@ -70,8 +70,11 @@ export async function obtainDie(source, top, {onStatus} = {}) {
   }
   onStatus?.('computing layout…');
   const t0 = performance.now();
-  const bytes = await compute(source, top, key, onStatus);
+  const bytes = await compute(kind, source, top, key, onStatus);
   const die = decodeDie(bytes);
   gzip(bytes).then(gz => idbPut(key, gz.buffer));
   return {die, from:`computed in ${((performance.now() - t0) / 1000).toFixed(1)} s, saved to browser cache`, key};
 }
+
+export const obtainDie = (source, top, {onStatus} = {}) => obtain('die', layoutKey(source, top), source, top, onStatus);
+export const obtainSchematic = (source, top, {onStatus} = {}) => obtain('sch', schematicKey(source, top), source, top, onStatus);

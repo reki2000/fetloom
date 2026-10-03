@@ -6,7 +6,7 @@ import {FetLoomSimulator} from '../src/sim.js';
 import {buildDie, layoutKey, LAYERS} from '../src/die.js';
 import {encodeDie, decodeDie} from '../src/die-format.js';
 import {EXAMPLES} from '../src/examples.js';
-import {buildSchematic, busValue, busText} from '../src/die-schematic.js';
+import {buildSchematic, schematicKey, busValue, busText, SCH_LAYERS} from '../src/schematic.js';
 
 const root=new URL('../',import.meta.url);
 function read(rel){return fs.readFileSync(new URL(rel,root),'utf8');}
@@ -161,22 +161,46 @@ for(const f of ['inverter','fulladder','memory','counter4']){
   }
 }
 
-// schematic mode: devices + wires recovered from the mask data, bus bits merged
+// schematic layout: independent of the die, nested boxes, buses as single thick lines
 {
-  const src=read('examples/td4.fetl'), c=elaborate(parseFetLoom(src),'main');
-  const e=JSON.parse(read('layouts/manifest.json')).entries[layoutKey(src,'main')];
-  const die=decodeDie(zlib.gunzipSync(fs.readFileSync(new URL(`layouts/${e.file}`,root))));
-  const sch=buildSchematic(die,c.netMeta), n=c.netNames.length;
-  const count=name=>sch.layerRanges[['block','pad','wire','bus','device','bubble'].indexOf(name)][1];
-  assert.ok(count('device')>=c.devices.length*6,'schematic: a symbol per transistor');
-  assert.ok(count('bus')>0&&count('wire')>0,'schematic: wires and buses');
-  const pc=sch.buses.find(b=>b.key==='main.pc');
-  assert.ok(pc&&pc.bits.length===4&&pc.id>=n,'schematic: pc[4] is one bus with a virtual net id');
-  for(let i=0;i<sch.rects.length;i+=6) if(sch.rects[i+5]>=n) assert.ok(sch.buses[sch.rects[i+5]-n],'bus id valid');
-  const val=v=>()=>v;
-  assert.equal(busValue(pc,val(1)),1); assert.equal(busValue(pc,n=>n===pc.bits[0]?1:0),4);
+  for(const f of ['inverter','fulladder','memory','counter4','td4']){
+    const src=read(`examples/${f}.fetl`), c=elaborate(parseFetLoom(src),'main');
+    const sch=buildSchematic(c,{key:schematicKey(src,'main')}), {header,rects}=sch;
+    assert.equal(header.layerRanges.length,SCH_LAYERS.length);
+    assert.equal(header.stats.conflicts,0,`${f}: schematic wires do not overlap`);
+    const n=c.netNames.length;
+    for(let i=0;i<rects.length;i+=6){ const id=rects[i+5]; assert.ok(id<n+header.groups.length,`${f}: net id in range`); }
+    // sibling boxes never overlap
+    const boxes=header.boxes;
+    const kids=new Map();
+    for(const b of boxes){ const parent=b.p.slice(0,b.p.lastIndexOf('/')); if(!kids.has(parent))kids.set(parent,[]); kids.get(parent).push(b); }
+    for(const list of kids.values()) for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+      const [a,b]=[list[i].r,list[j].r];
+      assert.ok(a[0]+a[2]<=b[0]||b[0]+b[2]<=a[0]||a[1]+a[3]<=b[1]||b[1]+b[3]<=a[1],`${f}: ${list[i].p} overlaps ${list[j].p}`);
+    }
+    assert.deepEqual(buildSchematic(elaborate(parseFetLoom(src),'main')).rects,rects,`${f}: deterministic schematic`);
+    console.log(`${f}: schematic ${header.size.join('x')}, ${header.stats.rects} rects, ${header.groups.length} bundles`);
+  }
+  const c=elaborate(parseFetLoom(read('examples/td4.fetl')),'main'), sch=buildSchematic(c);
+  const pc=sch.header.groups.find(g=>g.l==='main.pc[4]');
+  assert.ok(pc&&pc.bits.length===4,'td4: pc[4] is one bundle');
+  assert.ok(sch.header.boxes.some(b=>b.m==='reg4e')&&sch.header.boxes.some(b=>b.m==='td4_decode'),'td4: module boxes');
+  assert.equal(busValue(pc,()=>1),1); assert.equal(busValue(pc,n=>n===pc.bits[0]?1:0),4);
   assert.equal(busText(pc,n=>n===pc.bits[1]?1:0),'0x2');
-  console.log(`td4 schematic: ${sch.buses.length} buses, ${sch.rects.length/6} rects`);
+  const keyA=schematicKey('module main(a -> y) {}','main');
+  assert.notEqual(keyA,layoutKey('module main(a -> y) {}','main'),'schematic and die keys differ');
+}
+
+// prebuilt schematic cache must match too
+{
+  const manifest=JSON.parse(read('layouts/manifest.json'));
+  for(const {file} of EXAMPLES){
+    const src=read(file), e=manifest.entries[schematicKey(src,'main')];
+    assert.ok(e&&e.kind==='sch',`${file}: prebuilt schematic is stale or missing (run npm run layouts)`);
+    const sch=decodeDie(zlib.gunzipSync(fs.readFileSync(new URL(`layouts/${e.file}`,root))));
+    assert.equal(sch.header.format,'fetloom-sch');
+    assert.equal(sch.header.stats.nets,elaborate(parseFetLoom(src),'main').netNames.length);
+  }
 }
 
 console.log('all tests passed');

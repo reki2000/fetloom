@@ -193,12 +193,14 @@ export function elaborate(ast, topName) {
         if (/^[A-Z]/.test(c)) throw new Error(`${childPath}: unknown builtin '${c}'`);
         const child=ast.modules.get(c); if(!child) throw new Error(`${childPath}: unknown module '${c}'`);
         if(st.args.length!==child.ports.length) throw new Error(`${childPath}: ${c} expects ${child.ports.length} args, got ${st.args.length}`);
-        const b=new Map(), ins=[], outs=[];
+        const b=new Map(), ins=[], outs=[], ports=[];
         child.ports.forEach((port,idx)=>{
           const nets=resolveSignal(st.args[idx],symbols,path,port.width); b.set(port.name,nets);
-          if(child.inputs.some(x=>x.name===port.name)) ins.push(...nets); else outs.push(...nets);
+          const input=child.inputs.some(x=>x.name===port.name);
+          if(input) ins.push(...nets); else outs.push(...nets);
+          ports.push({name:port.name,dir:input?'in':'out',nets:[...nets]});
         });
-        childRec(path,childPath,'module',c,ins,outs,{moduleName:c,builtin:false,nets:[...ins,...outs]});
+        childRec(path,childPath,'module',c,ins,outs,{moduleName:c,builtin:false,nets:[...ins,...outs],ports});
         expandModule(child,childPath,b,false);
       }
     }

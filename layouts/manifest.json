@@ -20,6 +20,20 @@
     "ms": 7
    }
   },
+  "14c1ca47b7fc800d4a1886297fcde3c6": {
+   "file": "inverter.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/inverter.fetl",
+   "top": "main",
+   "bytes": 692,
+   "stats": {
+    "nets": 4,
+    "bundles": 0,
+    "rects": 46,
+    "conflicts": 0,
+    "ms": 5
+   }
+  },
   "c11d68b95caeb900a3189a46afcda266": {
    "file": "logic.main.fdie.gz",
    "example": "examples/logic.fetl",
@@ -37,6 +51,20 @@
     "tunedGroups": 0,
     "rects": 401,
     "ms": 8
+   }
+  },
+  "fa1213797248396a52236fdbce35afaf": {
+   "file": "logic.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/logic.fetl",
+   "top": "main",
+   "bytes": 1958,
+   "stats": {
+    "nets": 9,
+    "bundles": 0,
+    "rects": 216,
+    "conflicts": 0,
+    "ms": 5
    }
   },
   "71aae519f19e58cb5c8fdd7e0e9ad559": {
@@ -58,6 +86,20 @@
     "ms": 27
    }
   },
+  "9eee10786a3832a712de2c3534feae43": {
+   "file": "fulladder.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/fulladder.fetl",
+   "top": "main",
+   "bytes": 7323,
+   "stats": {
+    "nets": 31,
+    "bundles": 0,
+    "rects": 1121,
+    "conflicts": 0,
+    "ms": 13
+   }
+  },
   "25cad836deaf1a2de3321e7aba725d87": {
    "file": "latch.main.fdie.gz",
    "example": "examples/latch.fetl",
@@ -75,6 +117,20 @@
     "tunedGroups": 0,
     "rects": 546,
     "ms": 6
+   }
+  },
+  "ace5620d41d81d656a710dae4e9d7c40": {
+   "file": "latch.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/latch.fetl",
+   "top": "main",
+   "bytes": 3378,
+   "stats": {
+    "nets": 13,
+    "bundles": 0,
+    "rects": 399,
+    "conflicts": 0,
+    "ms": 3
    }
   },
   "f05ebb6db284931ad7a14f988e4c3b9f": {
@@ -96,6 +152,20 @@
     "ms": 25
    }
   },
+  "76e5851ccfeb2d9dc81ce5a8c28b2c4c": {
+   "file": "memory.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/memory.fetl",
+   "top": "main",
+   "bytes": 1776,
+   "stats": {
+    "nets": 34,
+    "bundles": 4,
+    "rects": 152,
+    "conflicts": 0,
+    "ms": 5
+   }
+  },
   "876c692cd13136c0e1ead6f80f5be22b": {
    "file": "counter4.main.fdie.gz",
    "example": "examples/counter4.fetl",
@@ -113,6 +183,20 @@
     "tunedGroups": 1,
     "rects": 9637,
     "ms": 114
+   }
+  },
+  "bcc5e516262d567ef561a21fac1464dd": {
+   "file": "counter4.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/counter4.fetl",
+   "top": "main",
+   "bytes": 45083,
+   "stats": {
+    "nets": 160,
+    "bundles": 2,
+    "rects": 7086,
+    "conflicts": 0,
+    "ms": 67
    }
   },
   "becf486fd01a712d55e5938f2bfe2781": {
@@ -134,6 +218,20 @@
     "ms": 537
    }
   },
+  "7ba8c2349c147085d574f0cb87cb7517": {
+   "file": "alu4.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/alu4.fetl",
+   "top": "main",
+   "bytes": 64916,
+   "stats": {
+    "nets": 263,
+    "bundles": 8,
+    "rects": 10948,
+    "conflicts": 0,
+    "ms": 66
+   }
+  },
   "27ea122c13e4bea112bf96665bda7a55": {
    "file": "regfile4.main.fdie.gz",
    "example": "examples/regfile4.fetl",
@@ -153,11 +251,26 @@
     "ms": 829
    }
   },
+  "73e4435bb3ec9682650c30f2e668fc8e": {
+   "file": "regfile4.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/regfile4.fetl",
+   "top": "main",
+   "bytes": 173133,
+   "stats": {
+    "nets": 637,
+    "bundles": 10,
+    "rects": 29076,
+    "conflicts": 0,
+    "ms": 204
+   }
+  },
   "3c450fab8db3a5e4d2166d9b016fb577": {
    "file": "td4.main.fdie.gz",
+   "kind": "die",
    "example": "examples/td4.fetl",
    "top": "main",
-   "bytes": 228230,
+   "bytes": 228228,
    "stats": {
     "transistors": 1650,
     "nets": 858,
@@ -169,7 +282,21 @@
     "tunedNets": 37,
     "tunedGroups": 11,
     "rects": 53489,
-    "ms": 941
+    "ms": 1092
+   }
+  },
+  "43fad1a4c72c38e19bb3d77d2d7dab40": {
+   "file": "td4.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/td4.fetl",
+   "top": "main",
+   "bytes": 235075,
+   "stats": {
+    "nets": 858,
+    "bundles": 15,
+    "rects": 38856,
+    "conflicts": 0,
+    "ms": 251
    }
   },
   "b5c7f463f8a55449d487cc94d795a3cb": {
@@ -189,6 +316,20 @@
     "tunedGroups": 53,
     "rects": 798596,
     "ms": 380995
+   }
+  },
+  "1e9e46e9e2708d508174ae9618b444a5": {
+   "file": "i4004.main.fsch.gz",
+   "kind": "sch",
+   "example": "examples/i4004.fetl",
+   "top": "main",
+   "bytes": 3325649,
+   "stats": {
+    "nets": 12232,
+    "bundles": 188,
+    "rects": 569805,
+    "conflicts": 0,
+    "ms": 63849
    }
   }
  }
