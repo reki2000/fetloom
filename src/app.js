@@ -44,7 +44,7 @@ async function loadDie(){
     if(dieFor!==c)return;
     if(die.header.stats.nets!==c.netNames.length) throw new Error('cached layout does not match the compiled circuit');
     const st=die.header.stats;
-    view.setDie(die,`${from} · ${st.transistors} MOS · ${st.hardBlocks} blocks · wire ${st.wirelength} tracks · ${st.tunedNets} length-matched nets`+(st.overflowCells?` · ${st.overflowCells} congested cells`:''));
+    view.setDie(die,`${from} · ${st.transistors} MOS · ${st.hardBlocks} blocks · wire ${st.wirelength} tracks · ${st.tunedNets} length-matched nets`+(st.overflowCells?` · ${st.overflowCells} congested cells`:''),c.netMeta);
     view.setValueSource(n=>sim?sim.getValue(n):2);
     if(currentView&&currentView!==c.topName)view.zoomToPath(currentView);
   }catch(e){if(dieFor===c){dieFor=null;view.statusEl.textContent='layout failed';err(e);}}

@@ -6,6 +6,7 @@ import {FetLoomSimulator} from '../src/sim.js';
 import {buildDie, layoutKey, LAYERS} from '../src/die.js';
 import {encodeDie, decodeDie} from '../src/die-format.js';
 import {EXAMPLES} from '../src/examples.js';
+import {buildSchematic, busValue, busText} from '../src/die-schematic.js';
 
 const root=new URL('../',import.meta.url);
 function read(rel){return fs.readFileSync(new URL(rel,root),'utf8');}
@@ -158,6 +159,24 @@ for(const f of ['inverter','fulladder','memory','counter4']){
     assert.equal(die.header.key,key); assert.equal(die.header.stats.nets,c.netNames.length);
     checkDie(file,c,die);
   }
+}
+
+// schematic mode: devices + wires recovered from the mask data, bus bits merged
+{
+  const src=read('examples/td4.fetl'), c=elaborate(parseFetLoom(src),'main');
+  const e=JSON.parse(read('layouts/manifest.json')).entries[layoutKey(src,'main')];
+  const die=decodeDie(zlib.gunzipSync(fs.readFileSync(new URL(`layouts/${e.file}`,root))));
+  const sch=buildSchematic(die,c.netMeta), n=c.netNames.length;
+  const count=name=>sch.layerRanges[['block','pad','wire','bus','device','bubble'].indexOf(name)][1];
+  assert.ok(count('device')>=c.devices.length*6,'schematic: a symbol per transistor');
+  assert.ok(count('bus')>0&&count('wire')>0,'schematic: wires and buses');
+  const pc=sch.buses.find(b=>b.key==='main.pc');
+  assert.ok(pc&&pc.bits.length===4&&pc.id>=n,'schematic: pc[4] is one bus with a virtual net id');
+  for(let i=0;i<sch.rects.length;i+=6) if(sch.rects[i+5]>=n) assert.ok(sch.buses[sch.rects[i+5]-n],'bus id valid');
+  const val=v=>()=>v;
+  assert.equal(busValue(pc,val(1)),1); assert.equal(busValue(pc,n=>n===pc.bits[0]?1:0),4);
+  assert.equal(busText(pc,n=>n===pc.bits[1]?1:0),'0x2');
+  console.log(`td4 schematic: ${sch.buses.length} buses, ${sch.rects.length/6} rects`);
 }
 
 console.log('all tests passed');

@@ -90,7 +90,10 @@ Vcc/Gnd comb and every MOS transistor drawn on the masks of a 3-metal CMOS proce
   inside connections.
 - **Length matching.** Point-to-point bits of the same bus are tuned to the length of the longest
   bit with serpentine (zigzag) detours.
-- **Masks.** Toggle layers in the legend, or pick a single mask to see it as a photomask plate.
+- **Two drawing modes.** *Mask pattern* shows the manufacturing masks: toggle layers in the legend,
+  or pick a single mask to see it as a photomask plate. *Schematic* keeps the same placement but
+  draws MOS symbols and wire centre lines; the bits of a bus are merged into one thick line
+  labelled with its name and current value (amber when the bits disagree).
 - **Voltage.** While simulating, wires, gates and diffusion are coloured by their logic level
   (red = 1, blue = 0, grey = Z, magenta = X); transistor channels turn green when conducting.
   Click a wire to probe it, double-click to zoom into a block. Remaining routing conflicts, if
@@ -133,7 +136,8 @@ FetLoom/
     die-format.js binary layout container
     die-cache.js prebuilt + IndexedDB layout cache, worker orchestration
     die-worker.js layout computation off the UI thread
-    die-view.js  WebGL2 mask viewer with live voltage colouring
+    die-view.js  WebGL2 die viewer (mask / schematic modes) with live voltage colouring
+    die-schematic.js schematic geometry and bus bundling derived from the mask data
   tools/
     build-layouts.mjs  precompute layouts for the examples
   layouts/       prebuilt layout cache (*.fdie.gz + manifest.json)

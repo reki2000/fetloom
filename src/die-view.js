@@ -1,9 +1,12 @@
-// WebGL2 viewer for a FetLoom die layout.
-// All rectangles are drawn as instanced quads straight from the cached Int32 records;
-// the live logic value of every net is uploaded as a texture each frame, so wires,
-// gates and diffusion can be coloured by voltage without touching the geometry.
+// WebGL2 viewer for a FetLoom die layout, in two modes:
+//   mask      - the manufacturing masks, straight from the cached Int32 records
+//   schematic - the same placement drawn as MOS symbols and wire centre lines,
+//               with the bits of a bus merged into one thick line
+// Both are drawn as instanced quads; the live logic value of every net is uploaded as a
+// texture each frame, so geometry is coloured by voltage without being rebuilt.
 
 import {LAYERS, FLAG_NCH, FLAG_PCH} from './die.js';
+import {SCH_LAYERS, buildSchematic, busValue, busText} from './die-schematic.js';
 
 const VS = `#version 300 es
 precision highp float; precision highp int;
@@ -16,7 +19,7 @@ uniform int uVoltage, uMono;
 uniform vec4 uColor;
 out vec4 vColor;
 vec3 level(uint v) {
-  return v == 1u ? vec3(1.0, 0.30, 0.16) : v == 0u ? vec3(0.13, 0.40, 1.0) : v == 3u ? vec3(0.92, 0.22, 0.95) : vec3(0.55, 0.58, 0.62);
+  return v == 1u ? vec3(1.0, 0.30, 0.16) : v == 0u ? vec3(0.13, 0.40, 1.0) : v == 3u ? vec3(0.92, 0.22, 0.95) : v == 4u ? vec3(1.0, 0.76, 0.2) : vec3(0.55, 0.58, 0.62);
 }
 void main() {
   vec2 size = max(vec2(aRect.zw), uPx);
@@ -53,7 +56,7 @@ export class DieView {
     this.onProbe = onProbe; this.getNetName = getNetName;
     this.visible = LAYERS.map(() => true);
     this.solo = -1; this.voltage = true; this.showBlocks = true; this.showShorts = true;
-    this.getValue = null; this.die = null; this.hover = null;
+    this.getValue = null; this.die = null; this.hover = null; this.mode = 'mask';
     this.cam = {x:0, y:0, z:1};
     container.innerHTML = '';
     container.classList.add('die-pane');
@@ -68,11 +71,15 @@ export class DieView {
       box.addEventListener('change', () => { this.visible[i] = box.checked; this.render(); });
       legend.append(el('label', {title:l.name}, box, el('i', {style:`background:${l.color}`}), l.label));
     });
-    this.maskSel = maskSel;
+    this.maskSel = maskSel; this.legend = legend;
+    const modeSel = this.modeSel = el('select', {title:'drawing mode', onchange: e => this.setMode(e.target.value)},
+      el('option', {value:'mask'}, 'Mask pattern'), el('option', {value:'schematic'}, 'Schematic'));
+    this.shortsChk = chk('Conflicts', true, v => { this.showShorts = v; });
     const bar = el('div', {class:'toolbar wrap'},
+      modeSel,
       chk('Voltage', true, v => { this.voltage = v; }),
       chk('Blocks', true, v => { this.showBlocks = v; }),
-      chk('Conflicts', true, v => { this.showShorts = v; }),
+      this.shortsChk,
       maskSel,
       el('button', {onclick: () => this.fit()}, 'Fit'),
       this.statusEl);
@@ -101,6 +108,7 @@ export class DieView {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     this.inst = gl.createBuffer();
+    this.schBuf = gl.createBuffer();
     this.bg = gl.createBuffer();
     this.valTex = gl.createTexture();
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -113,23 +121,65 @@ export class DieView {
     gl.enableVertexAttribArray(2); gl.vertexAttribIPointer(2, 2, gl.INT, 24, off + 16); gl.vertexAttribDivisor(2, 1);
   }
 
-  setDie(die, info = '') {
-    this.die = die;
-    this.netIndex = null; this.bucket = null; this.hover = null;
+  // netMeta (from the elaborated circuit) is needed to find buses for the schematic mode
+  setDie(die, info = '', netMeta = null) {
+    this.die = die; this.netMeta = netMeta;
+    this.hover = null;
     const {header, rects} = die;
     this.statusEl.textContent = info;
+    this.scenes = {mask: {rects, ranges: header.layerRanges, styles: LAYERS, buf: this.inst}, schematic: null};
+    this.buses = [];
     if (!this.gl) return;
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.inst); gl.bufferData(gl.ARRAY_BUFFER, rects, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.bg); gl.bufferData(gl.ARRAY_BUFFER, new Int32Array([0, 0, header.size[0], header.size[1], 0, -1]), gl.STATIC_DRAW);
-    this.texH = Math.max(1, Math.ceil(header.stats.nets / 1024));
+    this._allocValues(header.stats.nets);
+    this.blocks = header.blocks.slice().sort((a, b) => a.d - b.d);
+    if (this.mode === 'schematic') this._ensureSchematic();
+    this.fit();
+  }
+
+  _allocValues(count) {
+    const gl = this.gl;
+    this.texH = Math.max(1, Math.ceil(count / 1024));
     this.vals = new Uint8Array(1024 * this.texH).fill(2);
     gl.bindTexture(gl.TEXTURE_2D, this.valTex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, 1024, this.texH, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, this.vals);
-    this.blocks = header.blocks.slice().sort((a, b) => a.d - b.d);
-    this.fit();
+  }
+
+  _ensureSchematic() {
+    if (!this.die || this.scenes.schematic) return;
+    const sch = buildSchematic(this.die, this.netMeta || []);
+    this.buses = sch.buses;
+    this.scenes.schematic = {rects: sch.rects, ranges: sch.layerRanges, styles: SCH_LAYERS, buf: this.schBuf};
+    if (this.gl) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.schBuf); this.gl.bufferData(this.gl.ARRAY_BUFFER, sch.rects, this.gl.STATIC_DRAW);
+      this._allocValues(this.die.header.stats.nets + this.buses.length);
+    }
+  }
+
+  setMode(mode) {
+    this.mode = mode; this.modeSel.value = mode;
+    const mask = mode === 'mask';
+    this.legend.hidden = !mask; this.maskSel.hidden = !mask; this.shortsChk.hidden = !mask;
+    if (!mask) this._ensureSchematic();
+    this.hover = null;
+    this.render();
+  }
+
+  get scene() { return this.scenes?.[this.mode] || this.scenes?.mask; }
+  _layerVisible(i) { return this.mode !== 'mask' || (this.solo >= 0 ? i === this.solo : this.visible[i]); }
+  _name(id) {
+    const nets = this.die.header.stats.nets;
+    if (id < nets) return this.getNetName(id);
+    return this.buses[id - nets]?.label ?? String(id);
+  }
+  _valueText(id) {
+    if (!this.getValue) return '';
+    const nets = this.die.header.stats.nets;
+    return id < nets ? '01ZX'[this.getValue(id)] : busText(this.buses[id - nets], this.getValue);
   }
 
   setValueSource(fn) { this.getValue = fn; this.render(); }
@@ -172,11 +222,13 @@ export class DieView {
     const dpr = window.devicePixelRatio || 1, W = this.canvas.width, H = this.canvas.height;
     const z = this.cam.z * dpr;
     gl.viewport(0, 0, W, H);
-    const mono = this.solo >= 0;
+    const scene = this.scene, schem = this.mode !== 'mask';
+    const mono = !schem && this.solo >= 0;
     gl.clearColor(...(mono ? [0.93, 0.95, 0.96, 1] : [0.06, 0.07, 0.09, 1])); gl.clear(gl.COLOR_BUFFER_BIT);
     if (this.getValue && this.voltage) {
       const n = header.stats.nets, v = this.vals;
       for (let i = 0; i < n; i++) v[i] = this.getValue(i);
+      if (schem) this.buses.forEach((b, i) => { v[n + i] = busValue(b, this.getValue); });
       gl.bindTexture(gl.TEXTURE_2D, this.valTex);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, this.texH, gl.RED_INTEGER, gl.UNSIGNED_BYTE, v);
     }
@@ -190,18 +242,18 @@ export class DieView {
     // silicon substrate
     if (!mono) {
       this._bindInstances(this.bg, 0);
-      gl.uniform4f(this.u.uColor, 0.17, 0.19, 0.22, 1);
+      if (schem) gl.uniform4f(this.u.uColor, 0.09, 0.11, 0.14, 1); else gl.uniform4f(this.u.uColor, 0.17, 0.19, 0.22, 1);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
     }
-    LAYERS.forEach((l, i) => {
-      if (mono ? i !== this.solo : !this.visible[i]) return;
-      const [first, count] = header.layerRanges[i];
+    scene.styles.forEach((l, i) => {
+      if (!this._layerVisible(i)) return;
+      const [first, count] = scene.ranges[i];
       if (!count) return;
       let c = hex(l.color, l.alpha);
       if (mono) c = [0.08, 0.09, 0.1, 1];
-      else if (this.voltage && this.getValue && !l.conductive) c[3] *= 0.5;
+      else if (!schem && this.voltage && this.getValue && !l.conductive) c[3] *= 0.5;
       gl.uniform4f(this.u.uColor, ...c);
-      this._bindInstances(this.inst, first);
+      this._bindInstances(scene.buf, first);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     });
     this._drawOverlay(dpr);
@@ -214,7 +266,7 @@ export class DieView {
     const ctx = this.ctx, {header} = this.die;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
-    const mono = this.solo >= 0;
+    const schem = this.mode !== 'mask', mono = !schem && this.solo >= 0;
     ctx.font = '11px ui-monospace, monospace';
     if (mono) { // die edge for orientation on a single mask plate
       const [sx, sy] = this._toScreen(0, 0);
@@ -250,9 +302,24 @@ export class DieView {
       }
       ctx.setLineDash([]);
     }
+    // bus names and values along the thick bus lines
+    if (schem) {
+      ctx.font = '11px ui-monospace, monospace';
+      let n = 0;
+      for (const b of this.buses) {
+        if (!b.seg || b.seg[2] * this.cam.z < 70 || n > 300) continue;
+        const [sx, sy] = this._toScreen(b.seg[0], b.seg[1]);
+        if (sx < 0 || sy < 0 || sx > this.wrap.clientWidth || sy > this.wrap.clientHeight) continue;
+        const t = `${b.label.split(/[./]/).pop()}${this.getValue ? ' = ' + busText(b, this.getValue) : ''}`;
+        const w = ctx.measureText(t).width;
+        ctx.fillStyle = 'rgba(10,14,18,.75)'; ctx.fillRect(sx - w / 2 - 3, sy - 8, w + 6, 15);
+        ctx.fillStyle = '#ffe9b0'; ctx.fillText(t, sx - w / 2, sy + 4);
+        n++;
+      }
+    }
     // routing conflicts left by the router
     const sh = header.shorts || [];
-    if (sh.length && this.showShorts) {
+    if (sh.length && this.showShorts && !schem) {
       ctx.strokeStyle = '#ff3df2'; ctx.lineWidth = 1.5;
       const rad = Math.max(3, 6 * this.cam.z);
       for (let i = 0; i < sh.length; i += 2) {
@@ -262,7 +329,7 @@ export class DieView {
       }
     }
     if (this.hover?.net != null) {
-      const idx = this._netRects(this.hover.net), r = this.die.rects;
+      const idx = this._netRects(this.hover.net), r = this.scene.rects;
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
       for (let k = 0; k < idx.length; k++) {
         const o = idx[k] * 6;
@@ -274,41 +341,42 @@ export class DieView {
 
   // per-net rect lists, built on demand
   _netRects(net) {
-    if (!this.netIndex) {
-      const r = this.die.rects, n = r.length / 6, nets = this.die.header.stats.nets;
+    const sc = this.scene;
+    if (!sc.netIndex) {
+      const r = sc.rects, n = r.length / 6, nets = this.die.header.stats.nets + this.buses.length;
       const start = new Int32Array(nets + 1);
       for (let i = 0; i < n; i++) { const t = r[i * 6 + 5]; if (t >= 2) start[t + 1]++; }
       for (let i = 0; i < nets; i++) start[i + 1] += start[i];
       const list = new Int32Array(start[nets]), fillp = start.slice();
       for (let i = 0; i < n; i++) { const t = r[i * 6 + 5]; if (t >= 2) list[fillp[t]++] = i; }
-      this.netIndex = {start, list};
+      sc.netIndex = {start, list};
     }
-    const {start, list} = this.netIndex;
+    const {start, list} = sc.netIndex;
     return net >= 2 && net + 1 < start.length ? list.subarray(start[net], start[net + 1]) : new Int32Array(0);
   }
 
   // uniform bucket grid over conductive rects for picking
   _pick(wx, wy) {
-    const r = this.die.rects, B = 64;
-    if (!this.bucket) {
+    const sc = this.scene, r = sc.rects, B = 64;
+    if (!sc.bucket) {
       const [W, H] = this.die.header.size, bw = Math.ceil(W / B), bh = Math.ceil(H / B), n = r.length / 6;
       const cnt = new Int32Array(bw * bh + 1);
-      const each = fn => { for (let i = 0; i < n; i++) { const o = i * 6; if (r[o + 5] < 0 || !LAYERS[r[o + 4] & 255].conductive) continue;
+      const each = fn => { for (let i = 0; i < n; i++) { const o = i * 6; if (r[o + 5] < 0 || !sc.styles[r[o + 4] & 255].conductive) continue;
         const x0 = Math.max(0, Math.floor(r[o] / B)), x1 = Math.min(bw - 1, Math.floor((r[o] + r[o + 2]) / B)), y0 = Math.max(0, Math.floor(r[o + 1] / B)), y1 = Math.min(bh - 1, Math.floor((r[o + 1] + r[o + 3]) / B));
         for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) fn(y * bw + x, i); } };
       each(b => cnt[b + 1]++);
       for (let i = 0; i < bw * bh; i++) cnt[i + 1] += cnt[i];
       const list = new Int32Array(cnt[bw * bh]), fp = cnt.slice();
       each((b, i) => { list[fp[b]++] = i; });
-      this.bucket = {bw, bh, cnt, list};
+      sc.bucket = {bw, bh, cnt, list};
     }
-    const {bw, bh, cnt, list} = this.bucket, bx = Math.floor(wx / B), by = Math.floor(wy / B);
+    const {bw, bh, cnt, list} = sc.bucket, bx = Math.floor(wx / B), by = Math.floor(wy / B);
     if (bx < 0 || by < 0 || bx >= bw || by >= bh) return null;
     const tol = 2 / this.cam.z;
     let best = null, bestL = -1;
     for (let k = cnt[by * bw + bx]; k < cnt[by * bw + bx + 1]; k++) {
       const o = list[k] * 6, layer = r[o + 4] & 255;
-      if (this.solo >= 0 ? layer !== this.solo : !this.visible[layer]) continue;
+      if (!this._layerVisible(layer)) continue;
       if (wx >= r[o] - tol && wx <= r[o] + r[o + 2] + tol && wy >= r[o + 1] - tol && wy <= r[o + 1] + r[o + 3] + tol && layer > bestL) { bestL = layer; best = r[o + 5]; }
     }
     return best;
@@ -345,8 +413,8 @@ export class DieView {
       const net = this._pick(wx, wy), blk = this._blockAt(wx, wy);
       if (net !== this.hover?.net || blk !== this.hover?.blk) {
         this.hover = {net, blk};
-        const v = net != null && this.getValue ? ['0', '1', 'Z', 'X'][this.getValue(net)] : '';
-        this.hoverEl.textContent = (blk ? `${blk.p}  ` : '') + (net != null ? `| ${this.getNetName(net)}${v ? ' = ' + v : ''}` : '');
+        const v = net != null ? this._valueText(net) : '';
+        this.hoverEl.textContent = (blk ? `${blk.p}  ` : '') + (net != null ? `| ${this._name(net)}${v ? ' = ' + v : ''}` : '');
         this.render();
       }
     });
@@ -354,7 +422,9 @@ export class DieView {
       if (drag && !drag.moved && this.die) {
         const rect = c.getBoundingClientRect();
         const net = this._pick(...this._toWorld(e.clientX - rect.left, e.clientY - rect.top));
-        if (net != null && net >= 2) this.onProbe(net);
+        const nets = this.die.header.stats.nets;
+        if (net != null && net >= nets) for (const b of this.buses[net - nets].bits) this.onProbe(b);
+        else if (net != null && net >= 2) this.onProbe(net);
       }
       drag = null;
     });

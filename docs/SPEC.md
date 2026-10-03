@@ -186,6 +186,11 @@ layer ranges, statistics), then `Int32` records `[x, y, w, h, layer | flags << 8
 Channel rects carry `flags` 1 (NMOS) / 2 (PMOS) and the gate net so the viewer can show conduction.
 Layouts are cached by `layoutKey(source, top)`.
 
+The viewer has a mask mode and a schematic mode. The schematic is derived from the mask data at view
+time (`src/die-schematic.js`): channel rects become MOS symbols, routed metal becomes centre lines, and
+nets sharing a module path and local bus name are drawn as one thick line along the lowest routed bit,
+coloured by the aggregate value of all bits.
+
 ## 10. 4004 sample policy
 
 `examples/i4004.fetl` follows these rules:
