@@ -1,0 +1,195 @@
+{
+ "format": "fetloom-die-manifest",
+ "entries": {
+  "f092cb9b5038d0886db3d34bc76c451a": {
+   "file": "inverter.main.fdie.gz",
+   "example": "examples/inverter.fetl",
+   "top": "main",
+   "bytes": 1100,
+   "stats": {
+    "transistors": 2,
+    "nets": 4,
+    "hardBlocks": 1,
+    "routedNets": 4,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 61,
+    "tunedNets": 0,
+    "tunedGroups": 0,
+    "rects": 119,
+    "ms": 7
+   }
+  },
+  "c11d68b95caeb900a3189a46afcda266": {
+   "file": "logic.main.fdie.gz",
+   "example": "examples/logic.fetl",
+   "top": "main",
+   "bytes": 2318,
+   "stats": {
+    "transistors": 10,
+    "nets": 9,
+    "hardBlocks": 1,
+    "routedNets": 11,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 242,
+    "tunedNets": 0,
+    "tunedGroups": 0,
+    "rects": 401,
+    "ms": 8
+   }
+  },
+  "71aae519f19e58cb5c8fdd7e0e9ad559": {
+   "file": "fulladder.main.fdie.gz",
+   "example": "examples/fulladder.fetl",
+   "top": "main",
+   "bytes": 7197,
+   "stats": {
+    "transistors": 52,
+    "nets": 31,
+    "hardBlocks": 1,
+    "routedNets": 34,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 1066,
+    "tunedNets": 0,
+    "tunedGroups": 0,
+    "rects": 1623,
+    "ms": 27
+   }
+  },
+  "25cad836deaf1a2de3321e7aba725d87": {
+   "file": "latch.main.fdie.gz",
+   "example": "examples/latch.fetl",
+   "top": "main",
+   "bytes": 3049,
+   "stats": {
+    "transistors": 16,
+    "nets": 13,
+    "hardBlocks": 1,
+    "routedNets": 14,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 289,
+    "tunedNets": 0,
+    "tunedGroups": 0,
+    "rects": 546,
+    "ms": 6
+   }
+  },
+  "f05ebb6db284931ad7a14f988e4c3b9f": {
+   "file": "memory.main.fdie.gz",
+   "example": "examples/memory.fetl",
+   "top": "main",
+   "bytes": 7717,
+   "stats": {
+    "transistors": 4,
+    "nets": 34,
+    "hardBlocks": 1,
+    "routedNets": 62,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 3424,
+    "tunedNets": 21,
+    "tunedGroups": 3,
+    "rects": 1593,
+    "ms": 25
+   }
+  },
+  "876c692cd13136c0e1ead6f80f5be22b": {
+   "file": "counter4.main.fdie.gz",
+   "example": "examples/counter4.fetl",
+   "top": "main",
+   "bytes": 41821,
+   "stats": {
+    "transistors": 302,
+    "nets": 160,
+    "hardBlocks": 3,
+    "routedNets": 183,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 7939,
+    "tunedNets": 3,
+    "tunedGroups": 1,
+    "rects": 9637,
+    "ms": 114
+   }
+  },
+  "becf486fd01a712d55e5938f2bfe2781": {
+   "file": "alu4.main.fdie.gz",
+   "example": "examples/alu4.fetl",
+   "top": "main",
+   "bytes": 74160,
+   "stats": {
+    "transistors": 502,
+    "nets": 263,
+    "hardBlocks": 5,
+    "routedNets": 328,
+    "failedNets": 0,
+    "overflowCells": 1,
+    "wirelength": 16866,
+    "tunedNets": 9,
+    "tunedGroups": 3,
+    "rects": 17127,
+    "ms": 537
+   }
+  },
+  "27ea122c13e4bea112bf96665bda7a55": {
+   "file": "regfile4.main.fdie.gz",
+   "example": "examples/regfile4.fetl",
+   "top": "main",
+   "bytes": 163237,
+   "stats": {
+    "transistors": 1216,
+    "nets": 637,
+    "hardBlocks": 9,
+    "routedNets": 748,
+    "failedNets": 0,
+    "overflowCells": 1,
+    "wirelength": 32882,
+    "tunedNets": 29,
+    "tunedGroups": 11,
+    "rects": 38486,
+    "ms": 829
+   }
+  },
+  "3c450fab8db3a5e4d2166d9b016fb577": {
+   "file": "td4.main.fdie.gz",
+   "example": "examples/td4.fetl",
+   "top": "main",
+   "bytes": 228230,
+   "stats": {
+    "transistors": 1650,
+    "nets": 858,
+    "hardBlocks": 11,
+    "routedNets": 1000,
+    "failedNets": 0,
+    "overflowCells": 0,
+    "wirelength": 52384,
+    "tunedNets": 37,
+    "tunedGroups": 11,
+    "rects": 53489,
+    "ms": 941
+   }
+  },
+  "b5c7f463f8a55449d487cc94d795a3cb": {
+   "file": "i4004.main.fdie.gz",
+   "example": "examples/i4004.fetl",
+   "top": "main",
+   "bytes": 3392888,
+   "stats": {
+    "transistors": 24052,
+    "nets": 12232,
+    "hardBlocks": 68,
+    "routedNets": 13758,
+    "failedNets": 0,
+    "overflowCells": 649,
+    "wirelength": 1221745,
+    "tunedNets": 320,
+    "tunedGroups": 53,
+    "rects": 798596,
+    "ms": 380995
+   }
+  }
+ }
+}

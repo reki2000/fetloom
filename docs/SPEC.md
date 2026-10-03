@@ -169,6 +169,23 @@ The UI preserves module hierarchy even though the solver is flattened. The curre
 
 The probe pane stores the most recent 512 samples per selected net and renders a live digital waveform.
 
+### Die layout view
+
+A second visualization renders the elaborated circuit as a physical die (see `src/die.js`):
+
+- the top module is the core; its ports become bonding pads, Vcc/Gnd are distributed by a metal3 comb;
+- modules with at least `max(64, transistors/150)` transistors are hard blocks with their own ring and pins;
+  smaller modules are flattened into the parent's transistor field;
+- placement: FM min-cut bisection + slicing shape functions, stretched to a square of uniform density;
+- routing: per hard block, metal1/metal2 grid A* router with negotiated congestion;
+- bus bits with exactly two terminals in a block are length-matched with serpentine detours;
+- geometry: rectangles on 12 masks (`nwell pselect nselect active poly contact metal1 via1 metal2 via2 metal3 glass`).
+
+The result is stored as `FDIE` binary (`src/die-format.js`): magic, version, JSON header (blocks, pads,
+layer ranges, statistics), then `Int32` records `[x, y, w, h, layer | flags << 8, net]` in lambda units.
+Channel rects carry `flags` 1 (NMOS) / 2 (PMOS) and the gate net so the viewer can show conduction.
+Layouts are cached by `layoutKey(source, top)`.
+
 ## 10. 4004 sample policy
 
 `examples/i4004.fetl` follows these rules:

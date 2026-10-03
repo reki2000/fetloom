@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {parseFetLoom, elaborate} from '../src/dsl.js';
+import zlib from 'node:zlib';
 import {FetLoomSimulator} from '../src/sim.js';
+import {buildDie, layoutKey, LAYERS} from '../src/die.js';
+import {encodeDie, decodeDie} from '../src/die-format.js';
+import {EXAMPLES} from '../src/examples.js';
 
 const root=new URL('../',import.meta.url);
 function read(rel){return fs.readFileSync(new URL(rel,root),'utf8');}
@@ -19,11 +23,20 @@ function coreFor(c){
   };
 }
 
-for(const f of ['inverter','logic','fulladder','latch','memory','i4004']){
-  const ast=parseFetLoom(read(`examples/${f}.fetl`));
+for(const {file} of EXAMPLES){
+  const ast=parseFetLoom(read(file));
   const c=elaborate(ast,'main');
-  assert.ok(c.netNames.length>2,`${f}: nets`);
-  console.log(`${f}: ${c.netNames.length} nets, ${c.devices.length} MOS`);
+  assert.ok(c.netNames.length>2,`${file}: nets`);
+  console.log(`${file}: ${c.netNames.length} nets, ${c.devices.length} MOS`);
+}
+
+async function simFor(file){
+  const c=elaborate(parseFetLoom(read(file)),'main');
+  const {instance:inst}=await WebAssembly.instantiate(wasmBytes,{});
+  const sim=new FetLoomSimulator(c,inst.exports);
+  const out=name=>sim.getBus(c.topOutputs.find(p=>p.name===name).nets);
+  const run=n=>{for(let i=0;i<n;i++)sim.step();};
+  return {c,sim,out,run};
 }
 
 {
@@ -57,6 +70,94 @@ for(const f of ['inverter','logic','fulladder','latch','memory','i4004']){
   const port=c.topOutputs.find(p=>p.name==='rom_port');
   const v=sim.getBus(port.nets);
   assert.ok(v===6 || v===7,`4004 demo ROM port expected 6/7, got ${v}`);
+}
+
+{
+  const {sim,out,run}=await simFor('examples/counter4.fetl');
+  sim.setInputPort('reset',1); run(16); sim.setInputPort('reset',0); sim.setInputPort('en',1);
+  const seen=[]; for(let i=0;i<160;i++){sim.step(); if(seen.at(-1)!==out('q'))seen.push(out('q'));}
+  assert.deepEqual(seen.slice(0,17),[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0],'counter4 counts and wraps');
+}
+
+{
+  const c=elaborate(parseFetLoom(read('examples/alu4.fetl')),'main');
+  const core=coreFor(c);
+  const port=n=>c.topInputs.concat(c.topOutputs).find(p=>p.name===n).nets;
+  const bus=(nets)=>nets.reduce((v,n,i)=>v|(core.val(n)===1?1<<i:0),0);
+  for(let a=0;a<16;a++)for(let b=0;b<16;b++)for(let op=0;op<4;op++){
+    const drv=[];
+    port('a').forEach((n,i)=>drv.push([n,(a>>i)&1])); port('b').forEach((n,i)=>drv.push([n,(b>>i)&1])); port('op').forEach((n,i)=>drv.push([n,(op>>i)&1]));
+    core.solve(drv);
+    const y=[(a+b)&15,(a-b)&15,a&b,a^b][op], cy=op===0?+(a+b>15):op===1?+(a>=b):0;
+    assert.equal(bus(port('y')),y,`alu4 y op${op} ${a},${b}`);
+    assert.equal(bus(port('carry')),cy,`alu4 carry op${op} ${a},${b}`);
+    assert.equal(bus(port('zero')),+(y===0),`alu4 zero op${op} ${a},${b}`);
+  }
+}
+
+{
+  const {sim,out,run}=await simFor('examples/regfile4.fetl');
+  sim.setInputPort('reset',1); run(16); sim.setInputPort('reset',0); sim.setInputPort('we',1);
+  const vals=[5,10,3,12];
+  vals.forEach((v,r)=>{sim.setInputPort('waddr',r); sim.setInputPort('din',v); run(8);});
+  sim.setInputPort('we',0);
+  vals.forEach((v,r)=>{sim.setInputPort('raddr',r); run(2); assert.equal(out('dout'),v,`regfile4 r${r}`);});
+}
+
+{
+  const {sim,out,run}=await simFor('examples/td4.fetl');
+  sim.romData.set('examples/td4_demo.hex',Uint8Array.from([0x01,0x40,0x90,0xF0]));
+  sim.setInputPort('reset',1); run(16); sim.setInputPort('reset',0);
+  const seen=[]; for(let i=0;i<300;i++){sim.step(); if(seen.at(-1)!==out('out'))seen.push(out('out'));}
+  assert.deepEqual(seen.slice(0,6),[0,1,2,3,4,5],'td4 demo program counts on OUT');
+}
+
+// ---- die layout
+function checkDie(name,c,die){
+  const {header,rects}=die, [W,H]=header.size, n=rects.length/6;
+  assert.equal(header.layerRanges.length,LAYERS.length);
+  let expect=0;
+  header.layerRanges.forEach(([first,count],l)=>{
+    assert.equal(first,expect,`${name}: layer ranges contiguous`); expect+=count;
+    for(let i=first;i<first+count;i++){
+      const o=i*6;
+      assert.equal(rects[o+4]&255,l,`${name}: rect ${i} sorted by layer`);
+      assert.ok(rects[o]>=-8&&rects[o+1]>=-8&&rects[o]+rects[o+2]<=W+8&&rects[o+1]+rects[o+3]<=H+8,`${name}: rect ${i} inside die`);
+      assert.ok(rects[o+5]<c.netNames.length,`${name}: rect ${i} net id`);
+    }
+  });
+  assert.equal(expect,n);
+  assert.equal(header.stats.transistors,c.devices.length);
+  assert.equal(header.stats.failedNets,0,`${name}: all nets routed`);
+  assert.equal(Math.abs(header.size[0]-header.size[1]),0,`${name}: square die`);
+}
+for(const f of ['inverter','fulladder','memory','counter4']){
+  const src=read(`examples/${f}.fetl`), c=elaborate(parseFetLoom(src),'main');
+  const die=buildDie(c,{key:layoutKey(src,'main')});
+  checkDie(f,c,die);
+  const again=buildDie(elaborate(parseFetLoom(src),'main'),{key:layoutKey(src,'main')});
+  assert.deepEqual(again.rects,die.rects,`${f}: deterministic layout`);
+  const round=decodeDie(encodeDie(die));
+  assert.deepEqual(round.rects,die.rects); assert.equal(round.header.key,die.header.key);
+  console.log(`${f}: die ${die.header.grid.join('x')} cells, ${die.header.stats.rects} rects, ${die.header.stats.overflowCells} conflicts, ${die.header.stats.tunedNets} length-matched`);
+}
+{
+  const c=elaborate(parseFetLoom(read('examples/memory.fetl')),'main');
+  assert.ok(buildDie(c).header.stats.tunedNets>0,'bus nets are length matched');
+  assert.notEqual(layoutKey('module main(a -> y) {}','main'),layoutKey('module main(a -> y) { }','main'),'cache key depends on source');
+}
+
+// prebuilt layout cache must match the current examples
+{
+  const manifest=JSON.parse(read('layouts/manifest.json'));
+  for(const {file} of EXAMPLES){
+    const src=read(file), key=layoutKey(src,'main'), e=manifest.entries[key];
+    assert.ok(e,`${file}: prebuilt layout is stale or missing (run npm run layouts)`);
+    const die=decodeDie(zlib.gunzipSync(fs.readFileSync(new URL(`layouts/${e.file}`,root))));
+    const c=elaborate(parseFetLoom(src),'main');
+    assert.equal(die.header.key,key); assert.equal(die.header.stats.nets,c.netNames.length);
+    checkDie(file,c,die);
+  }
 }
 
 console.log('all tests passed');

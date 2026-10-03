@@ -34,10 +34,15 @@
     </div>
     <div id="inputs" class="inputs"></div>
     <div class="toolbar wrap">
+      <div class="tabs" role="tablist">
+        <button id="tabSchematic" class="tab active" role="tab">Schematic</button>
+        <button id="tabDie" class="tab" role="tab">Die layout</button>
+      </div>
       <label>View <select id="view"></select></label>
-      <span class="hint">double-click a module to drill in; click a wire/port to probe</span>
+      <span class="hint" id="viewHint">double-click a module to drill in; click a wire/port to probe</span>
     </div>
     <div id="schematic" class="schematic"></div>
+    <div id="die" hidden></div>
   </section>
 
   <section class="probe-pane">

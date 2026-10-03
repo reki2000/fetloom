@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/test.mjs"
+    "test": "node tests/test.mjs",
+    "layouts": "node tools/build-layouts.mjs"
   }
 }

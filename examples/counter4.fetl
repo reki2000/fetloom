@@ -1,0 +1,41 @@
+// FetLoom 4-bit synchronous counter
+// Smallest clocked sample: incrementer + enable mux + 4 reset-able D flip-flops.
+// Cap-based master/slave flip-flops, everything else is plain CMOS.
+
+module inv(a -> y) { Pmos(a, Vcc, y) Nmos(a, y, Gnd) }
+module buf(a -> y) { inv(a, _n) inv(_n, y) }
+module nand2(a, b -> y) { Pmos(a, Vcc, y) Pmos(b, Vcc, y) Nmos(a, y, _n) Nmos(b, _n, Gnd) }
+module and2(a, b -> y) { nand2(a, b, _n) inv(_n, y) }
+module or2(a, b -> y) { inv(a, _na) inv(b, _nb) nand2(_na, _nb, y) }
+module xor2(a, b -> y) { nand2(a,b,_n0) nand2(a,_n0,_n1) nand2(b,_n0,_n2) nand2(_n1,_n2,y) }
+module mux2(s, a, b -> y) { inv(s,_ns) and2(_ns,a,_a) and2(s,b,_b) or2(_a,_b,y) }
+
+module dlatch(d, en -> q) { Nmos(en, d, _s) Cap(_s) inv(_s, _n) inv(_n, q) }
+module dff(d, clk -> q) { inv(clk, _nclk) dlatch(d, _nclk, _m) dlatch(_m, clk, q) }
+module dffr(d, clk, reset -> q) { mux2(reset, d, Gnd, _d) dff(_d, clk, q) }
+
+module inc4(a[4] -> y[4], cout) {
+  inv(a[0], y[0])
+  xor2(a[1], a[0], y[1]) and2(a[1], a[0], _c2)
+  xor2(a[2], _c2, y[2])  and2(a[2], _c2, _c3)
+  xor2(a[3], _c3, y[3])  and2(a[3], _c3, cout)
+}
+
+module counter4(en, clk, reset -> q[4], carry) {
+  inc4(q, _inc, _c)
+  mux2(en, q[0], _inc[0], _n0)
+  mux2(en, q[1], _inc[1], _n1)
+  mux2(en, q[2], _inc[2], _n2)
+  mux2(en, q[3], _inc[3], _n3)
+  dffr(_n0, clk, reset, q[0])
+  dffr(_n1, clk, reset, q[1])
+  dffr(_n2, clk, reset, q[2])
+  dffr(_n3, clk, reset, q[3])
+  and2(en, _c, carry)
+}
+
+module main(en, reset -> q[4], carry, clk_out) {
+  Clk(4, _clk)
+  counter4(en, _clk, reset, q, carry)
+  buf(_clk, clk_out)
+}
