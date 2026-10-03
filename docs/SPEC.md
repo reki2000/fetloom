@@ -187,7 +187,9 @@ Channel rects carry `flags` 1 (NMOS) / 2 (PMOS) and the gate net so the viewer c
 Layouts are cached by `layoutKey(source, top)`.
 
 The viewer has a mask mode and a schematic mode. The schematic (`src/schematic.js`) is laid out
-independently of the die: nested module boxes (inputs left, outputs right), children in longest-path
+independently of the die: nested module boxes (inputs left, outputs right in the module's own frame;
+the parent mirrors a child horizontally when that brings its pins closer to their connections; ports
+along an edge are ordered by their inside connections), children in longest-path
 signal-flow columns with barycentre ordering, split/folded to fill the box evenly, CMOS cells as PMOS
 over NMOS rows, child boxes scaled down to their pin needs with level-of-detail codes in bits 16..23 of
 the layer field, and a per-module grid router where wires may cross but not overlap. Nets touching the

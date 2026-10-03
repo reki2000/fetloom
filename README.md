@@ -93,9 +93,11 @@ Vcc/Gnd comb and every MOS transistor drawn on the masks of a 3-metal CMOS proce
 - **Two drawing modes.** *Mask pattern* shows the manufacturing masks: toggle layers in the legend,
   or pick a single mask to see it as a photomask plate. *Schematic* is a separate, readability-first
   layout that ignores the die placement (`src/schematic.js`):
-  - every module is a box with inputs on the left and outputs on the right; children are arranged in
-    signal-flow columns (barycentre ordering, tall columns split, wide drawings folded into bands) so
-    the box is filled evenly in two dimensions;
+  - every module is a box drawn with inputs on the left and outputs on the right, but the parent may
+    mirror it so that its pins face what they connect to — on screen signals can enter from either
+    side; ports along an edge follow the order of the logic they feed, to avoid crossings;
+  - children are arranged in signal-flow columns (barycentre ordering, tall columns split, wide
+    drawings folded into bands) so the box is filled evenly in two dimensions;
   - transistor-only cells use the textbook CMOS arrangement (PMOS row over NMOS row) with MOS,
     Vcc and ground symbols;
   - child boxes are shrunk to what their pins need; zooming in reveals their contents (level of detail);

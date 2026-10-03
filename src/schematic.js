@@ -14,7 +14,7 @@
 
 import {DIE_VERSION} from './die.js';
 
-export const SCH_VERSION = 2;
+export const SCH_VERSION = 4;
 export const U = 8; // world units per grid cell
 
 export const SCH_LAYERS = [
@@ -162,10 +162,12 @@ function placeLayered(m) {
   }
   const colW = split.map(c => Math.max(...c.map(v => ch[v].cw)));
   // extra tracks in front of a column for the wires entering its pins, behind it for the ones leaving
-  const pinsOf = (c, left) => Math.max(0, ...c.map(v => ch[v].ppins.filter(p => (p.out[0] < 0) === left && p.out[1] === 0).length));
-  const gapBefore = split.map(c => Math.ceil(pinsOf(c, true) * 0.9 * sp));
-  const gapAfter = split.map(c => Math.ceil(pinsOf(c, false) * 0.6 * sp));
-  const colH = split.map(c => c.reduce((s, v) => s + ch[v].ch, 0) + gy * (c.length - 1));
+  // (pins may end up on either side once the children are mirrored, so reserve on both)
+  const pinsOf = (c, horiz) => Math.max(0, ...c.map(v => ch[v].ppins.filter(p => (p.out[1] === 0) === horiz).length));
+  const gapBefore = split.map(c => Math.ceil(pinsOf(c, true) * 0.6 * sp));
+  const gapAfter = gapBefore;
+  const colGy = split.map(c => gy + Math.ceil(pinsOf(c, false) * 0.6 * sp));
+  const colH = split.map((c, i) => c.reduce((s, v) => s + ch[v].ch, 0) + colGy[i] * (c.length - 1));
   // fold very wide drawings into bands
   const span = i => gapBefore[i] + colW[i] + gapAfter[i] + gx;
   const totalW = split.reduce((s, c, i) => s + span(i), 0) - gx, maxH = Math.max(...colH);
@@ -185,7 +187,7 @@ function placeLayered(m) {
       const free = bh - colH[i], step = free / (c.length + 1);
       let cy = y + step;
       x += gapBefore[i];
-      for (const v of c) { const it = ch[v]; it.x = Math.round(x + (colW[i] - it.cw) / 2); it.y = Math.round(cy); cy += it.ch + gy + step; }
+      for (const v of c) { const it = ch[v]; it.x = Math.round(x + (colW[i] - it.cw) / 2); it.y = Math.round(cy); cy += it.ch + colGy[i] + step; }
       x += colW[i] + gapAfter[i] + gx;
     }
     W = Math.max(W, x - gx);
@@ -210,7 +212,7 @@ function routeModule(m) {
     return id;
   };
   for (const c of m.children) for (const p of c.ppins) p.local = addPin(c.x + p.x, c.y + p.y, p.nets, p.out, c);
-  for (const p of m.pins) p.inner = addPin(p.x, p.y, p.nets, [p.x === 0 ? 1 : -1, 0], m);
+  for (const p of m.pins) p.inner = addPin(p.x, p.y, p.nets, [-p.out[0], -p.out[1]], m);
   // group nets by the exact set of pins they touch
   const touch = new Map();
   for (const p of pins) for (const n of p.nets) { if (isPower(n)) continue; let a = touch.get(n); if (!a) touch.set(n, a = new Set()); a.add(p.id); }
@@ -322,27 +324,72 @@ function routeModule(m) {
 // ---------------------------------------------------------------- layout
 
 const SMIN = 0.45; // smallest scale of a child box relative to its parent's grid
+const isBox = c => c.kind === 'module' || c.kind === 'mem';
+const sideOf = out => out[0] < 0 ? 'L' : out[0] > 0 ? 'R' : out[1] < 0 ? 'T' : 'B';
 
 // footprint of a laid-out node inside its parent: boxes shrink to what their pins need
 function footprint(c) {
-  if (c.kind !== 'module' && c.kind !== 'mem') { c.s = 1; c.cw = c.w; c.ch = c.h; c.ppins = c.pins; return; }
-  const nIn = c.pins.filter(p => p.x === 0).length, nOut = c.pins.length - nIn;
-  const minH = 3 * Math.max(nIn, nOut) + 5, minW = Math.max(14, Math.ceil(c.name.length * 1.1) + 6);
+  c.fx = c.fy = false;
+  if (!isBox(c)) { c.s = 1; c.cw = c.w; c.ch = c.h; c.ppins = c.ppins0 = c.pins; return; }
+  const n = side => c.pins.filter(p => p.side === side).length;
+  const minH = 3 * Math.max(n('L'), n('R')) + 5, minW = Math.max(14, Math.ceil(c.name.length * 1.1) + 6, 3 * Math.max(n('T'), n('B')) + 6);
   c.s = Math.min(1, Math.max(minH / c.h, minW / c.w, SMIN));
   c.cw = Math.max(3, Math.ceil(c.w * c.s)); c.ch = Math.max(3, Math.ceil(c.h * c.s));
-  const used = new Set();
-  c.ppins = c.pins.map(p => {
-    const x = p.x === 0 ? 0 : c.cw - 1;
-    let y = Math.min(c.ch - 2, Math.max(1, Math.round((p.y + 0.5) * c.s - 0.5)));
-    while (used.has(`${x},${y}`) && y < c.ch - 2) y++;
-    while (used.has(`${x},${y}`) && y > 1) y--;
-    used.add(`${x},${y}`);
+  const used = new Set(), scale = v => Math.round((v + 0.5) * c.s - 0.5);
+  c.ppins = c.ppins0 = c.pins.map(p => {
+    const vert = p.side === 'L' || p.side === 'R';
+    let x = vert ? (p.side === 'L' ? 0 : c.cw - 1) : Math.min(c.cw - 2, Math.max(1, scale(p.x)));
+    let y = vert ? Math.min(c.ch - 2, Math.max(1, scale(p.y))) : (p.side === 'T' ? 0 : c.ch - 1);
+    const key = () => `${x},${y}`;
+    if (vert) { while (used.has(key()) && y < c.ch - 2) y++; while (used.has(key()) && y > 1) y--; }
+    else { while (used.has(key()) && x < c.cw - 2) x++; while (used.has(key()) && x > 1) x--; }
+    used.add(key());
     return {...p, x, y, src: p};
   });
 }
 
+// mirror a placed child so that its pins face the things they connect to
+function orient(c, fx, fy) {
+  c.fx = fx; c.fy = fy;
+  c.ppins = c.ppins0.map(p => ({...p, x: fx ? c.cw - 1 - p.x : p.x, y: fy ? c.ch - 1 - p.y : p.y, out: [fx ? -p.out[0] : p.out[0], fy ? -p.out[1] : p.out[1]]}));
+}
+function chooseOrientations(m) {
+  const boxes = m.children.filter(c => isBox(c) && c.ppins0.length);
+  if (!boxes.length) return;
+  for (let round = 0; round < 3; round++) {
+    const at = new Map();
+    for (const c of m.children) for (const p of c.ppins) for (const n of p.nets) {
+      if (isPower(n)) continue;
+      let a = at.get(n); if (!a) at.set(n, a = []); a.push([c.x + p.x, c.y + p.y, c]);
+    }
+    let changed = false;
+    for (const c of boxes) {
+      // centroid of everything else each pin connects to
+      const targets = c.ppins0.map(p => {
+        let sx = 0, sy = 0, k = 0;
+        for (const n of p.nets) for (const [x, y, o] of at.get(n) || []) if (o !== c) { sx += x; sy += y; k++; }
+        return k ? [sx / k, sy / k] : null;
+      });
+      let best = null;
+      // only left/right mirroring: flipping vertically would put NMOS above PMOS
+      for (const [fx, fy] of [[false, false], [true, false]]) {
+        let cost = 0;
+        c.ppins0.forEach((p, i) => {
+          const t = targets[i]; if (!t) return;
+          const x = c.x + (fx ? c.cw - 1 - p.x : p.x), y = c.y + (fy ? c.ch - 1 - p.y : p.y);
+          cost += Math.abs(x - t[0]) + Math.abs(y - t[1]);
+        });
+        cost += (fx ? 0.5 : 0) + (fy ? 0.5 : 0); // keep the natural orientation on ties
+        if (!best || cost < best[0]) best = [cost, fx, fy];
+      }
+      if (best[1] !== c.fx || best[2] !== c.fy) { orient(c, best[1], best[2]); changed = true; }
+    }
+    if (!changed) break;
+  }
+}
+
 function layout(m) {
-  if (m.kind !== 'module' && m.kind !== 'mem') { leafShape(m); footprint(m); return; }
+  if (!isBox(m)) { leafShape(m); footprint(m); return; }
   for (const c of m.children) layout(c);
   // widen the spacing and lay out again while wires still overlap
   for (let attempt = 0; ; attempt++) {
@@ -353,25 +400,59 @@ function layout(m) {
   footprint(m);
 }
 
+// Inside its own drawing a module keeps inputs on the left and outputs on the right (the
+// columns run in signal-flow order); the parent may mirror it, so on screen a block's inputs
+// can just as well arrive from the right.  Along each edge the ports follow the vertical order
+// of the logic they connect to inside, which avoids crossings at the edge.
+// (Letting ports pick any edge by the position of their inside connections was measured to
+// produce longer wires with more bends than this, because the columns already encode the flow.)
+function assignSides(m) {
+  const at = new Map();
+  for (const c of m.children) for (const p of c.ppins) for (const n of p.nets) {
+    if (isPower(n)) continue;
+    let a = at.get(n); if (!a) at.set(n, a = []); a.push(c.y + p.y);
+  }
+  const bySide = {L: [], R: [], T: [], B: []};
+  m.ports.forEach((p, i) => {
+    let sy = 0, k = 0;
+    for (const n of p.nets) for (const y of at.get(n) || []) { sy += y; k++; }
+    bySide[p.dir === 'in' ? 'L' : 'R'].push({p, i, cy: k ? sy / k : Infinity});
+  });
+  for (const sd of 'LR') bySide[sd].sort((a, b) => a.cy - b.cy || a.i - b.i);
+  return bySide;
+}
+
 function place(m) {
-  const ins = m.ports.filter(p => p.dir === 'in'), outs = m.ports.filter(p => p.dir === 'out');
-  const lw = ps => ps.length ? Math.ceil(Math.max(...ps.map(p => (p.name + (p.nets.length > 1 ? `[${p.nets.length}]` : '')).length)) * CHAR) + 1 : 0;
-  // margins hold the port labels plus vertical tracks for buses that fan out to bits
-  const fan = ps => ps.reduce((a, p) => a + (p.nets.length > 1 ? p.nets.filter(n => !isPower(n)).length : 0), 0);
-  const sp = m.spread || 1;
-  const vfan = Math.ceil((fan(ins) + fan(outs)) * 0.4 * sp);
-  const ML = 3 + lw(ins) + Math.ceil(fan(ins) * 0.8 * sp), MR = 3 + lw(outs) + Math.ceil(fan(outs) * 0.8 * sp), MT = 3 + vfan, MB = 2 + vfan;
-  m.ml = ML; m.mr = MR; m.mt = MT;
   let inner = {w:0, h:0};
-  if (m.children.length) inner = m.children.every(c => c.kind === 'nmos' || c.kind === 'pmos' || c.kind === 'cap') ? placeCmos(m) : placeLayered(m);
+  if (m.children.length) {
+    for (const c of m.children) if (isBox(c)) orient(c, false, false);
+    inner = m.children.every(c => c.kind === 'nmos' || c.kind === 'pmos' || c.kind === 'cap') ? placeCmos(m) : placeLayered(m);
+    chooseOrientations(m);
+  }
+  const sides = assignSides(m);
+  const ps = sd => sides[sd].map(q => q.p);
+  const lw = list => list.length ? Math.ceil(Math.max(...list.map(p => (p.name + (p.nets.length > 1 ? `[${p.nets.length}]` : '')).length)) * CHAR) + 1 : 0;
+  // margins hold the port labels plus tracks for buses that fan out to bits
+  const fan = list => list.reduce((a, p) => a + (p.nets.length > 1 ? p.nets.filter(n => !isPower(n)).length : 0), 0);
+  const sp = m.spread || 1;
+  const vfan = Math.ceil((fan(ps('L')) + fan(ps('R'))) * 0.4 * sp), hfan = Math.ceil((fan(ps('T')) + fan(ps('B'))) * 0.4 * sp);
+  const ML = 3 + lw(ps('L')) + Math.ceil(fan(ps('L')) * 0.8 * sp) + hfan, MR = 3 + lw(ps('R')) + Math.ceil(fan(ps('R')) * 0.8 * sp) + hfan;
+  const MT = 3 + (sides.T.length ? 2 + Math.ceil(fan(ps('T')) * 0.8 * sp) : 0) + vfan, MB = 2 + (sides.B.length ? 2 + Math.ceil(fan(ps('B')) * 0.8 * sp) : 0) + vfan;
+  m.margin = {L: ML, R: MR, T: MT, B: MB};
   const titleW = Math.ceil(m.name.length * CHAR * 1.3) + 4;
-  m.w = Math.max(ML + inner.w + MR, titleW, 8);
-  m.h = Math.max(MT + inner.h + MB, 2 * Math.max(ins.length, outs.length) + MT + 1, 6);
-  // centre the content and distribute the port pins evenly along the edges
+  m.w = Math.max(ML + inner.w + MR, titleW + 3 * sides.T.length + 3, 3 * sides.B.length + 5, 8);
+  m.h = Math.max(MT + inner.h + MB, 2 * Math.max(sides.L.length, sides.R.length) + MT + 1, 6);
+  // centre the content and spread the pins along their edges in the order of their connections
   const ox = Math.round(ML + (m.w - ML - MR - inner.w) / 2), oy = MT + Math.round((m.h - MT - MB - inner.h) / 2);
   for (const c of m.children) { c.x += ox; c.y += oy; }
-  const spread = (ps, x, out) => ps.map((p, i) => ({x, y: Math.round(MT + (i + 0.5) * (m.h - MT - 1) / ps.length), nets:p.nets, name:p.name, out, dir:p.dir}));
-  m.pins = [...spread(ins, 0, [-1, 0]), ...spread(outs, m.w - 1, [1, 0])];
+  const along = (list, a, b) => list.map((q, i) => Math.round(a + (i + 0.5) * (b - a) / list.length));
+  const pin = (q, x, y, side) => ({x, y, side, nets: q.p.nets, name: q.p.name, dir: q.p.dir, out: {L: [-1, 0], R: [1, 0], T: [0, -1], B: [0, 1]}[side]});
+  m.pins = [
+    ...along(sides.L, MT, m.h - 1).map((y, i) => pin(sides.L[i], 0, y, 'L')),
+    ...along(sides.R, MT, m.h - 1).map((y, i) => pin(sides.R[i], m.w - 1, y, 'R')),
+    ...along(sides.T, Math.min(titleW, m.w - 2 - sides.T.length), m.w - 1).map((x, i) => pin(sides.T[i], x, 0, 'T')),
+    ...along(sides.B, 1, m.w - 1).map((x, i) => pin(sides.B[i], x, m.h - 1, 'B')),
+  ];
   if (m.children.length) routeModule(m);
 }
 
@@ -411,29 +492,32 @@ export function buildSchematic(circuit, opts = {}) {
   };
   const widthOf = (k, cs) => (k > 1 ? 2.5 + 1.2 * Math.min(k, 8) : 2) * cs / 8;
 
-  const power = (px, py, out, net, k) => { // supply symbol pointing away from the pin
-    const [dx, dy] = out, L = 7 * k, t = 2 * k;
-    const ex = px + dx * L, ey = py + dy * L;
-    R(Math.min(px, ex) - (dx ? 0 : t / 2), Math.min(py, ey) - (dy ? 0 : t / 2), dx ? L : t, dy ? L : t, S.device, net);
-    (net === 0 ? [12] : [12, 8, 4]).forEach((len, i) => {
-      const bx = ex + dx * i * 3 * k, by = ey + dy * i * 3 * k;
-      if (dx) R(bx - t / 2, by - len * k / 2, t, len * k, S.device, net); else R(bx - len * k / 2, by - t / 2, len * k, t, S.device, net);
-    });
-  };
-
   // smallest cell size in the tree decides the world scale of the top level
   let minProd = 1;
   (function scan(m, prod) { minProd = Math.min(minProd, prod); for (const c of m.children || []) scan(c, prod * c.s); })(root, 1);
   const topCell = Math.min(Math.max(8, Math.ceil(6 / minProd)), Math.floor(2e9 / Math.max(root.w, root.h)));
 
-  // wx, wy: world position of the node, cs: world units per grid cell of the node
-  function emit(m, wx, wy, cs, parentLod, depth) {
-    const k = cs / 8, ww = m.w * cs, wh = m.h * cs;
+  // F: frame of a node = world origin, world units per cell and mirroring
+  function emit(m, F, parentLod, depth) {
+    const {ox, oy, cs, fx, fy} = F, k = cs / 8, ww = m.w * cs, wh = m.h * cs;
     const own = Math.max(ww, wh);
+    // local (unmirrored) coordinates -> world
+    const Rl = (x, y, w, h, layer, net = -1, flags = 0) => R(fx ? ox + ww - x - w : ox + x, fy ? oy + wh - y - h : oy + y, w, h, layer, net, flags);
+    const Pt = (x, y) => [fx ? ox + ww - x : ox + x, fy ? oy + wh - y : oy + y];
+    const Lbl = (x, y, size, l, align, text) => { const [px, py] = Pt(x, y); label(px, py, size, l, fx && align < 2 ? 1 - align : align, text); };
+    const power = (px, py, out, net) => { // supply symbol pointing away from the pin (local coords)
+      const [dx, dy] = out, L = 7 * k, t = 2 * k;
+      const ex = px + dx * L, ey = py + dy * L;
+      Rl(Math.min(px, ex) - (dx ? 0 : t / 2), Math.min(py, ey) - (dy ? 0 : t / 2), dx ? L : t, dy ? L : t, S.device, net);
+      (net === 0 ? [12] : [12, 8, 4]).forEach((len, i) => {
+        const bx = ex + dx * i * 3 * k, by = ey + dy * i * 3 * k;
+        if (dx) Rl(bx - t / 2, by - len * k / 2, t, len * k, S.device, net); else Rl(bx - len * k / 2, by - t / 2, len * k, t, S.device, net);
+      });
+    };
     lod = lodCode(parentLod);
     if (m.kind === 'nmos' || m.kind === 'pmos') {
       const p = m.kind === 'pmos', f = p ? FLAG_PCH : FLAG_NCH;
-      const D = (x, y, w, h, layer, net = -1, fl = 0) => R(wx + x * k, wy + y * k, w * k, h * k, layer, net, fl);
+      const D = (x, y, w, h, layer, net = -1, fl = 0) => Rl(x * k, y * k, w * k, h * k, layer, net, fl);
       D(4, 19, p ? 6 : 10, 2, S.device, m.g);
       if (p) { D(10, 17, 4, 6, S.device, m.g); D(11, 19, 2, 2, S.bubble); }
       D(14, 11, 2, 18, S.device, m.g);
@@ -441,42 +525,49 @@ export function buildSchematic(circuit, opts = {}) {
       D(19, 3, 2, 8, S.device, m.a);
       D(19, 29, 2, 8, S.device, m.b);
       D(21, 10, 4, 2, S.device, m.a); D(21, 28, 4, 2, S.device, m.b);
-      for (const pn of m.pins) if (isPower(pn.nets[0])) power(wx + (pn.x + 0.5) * cs, wy + (pn.y + 0.5) * cs, pn.out, pn.nets[0], k);
+      for (const pn of m.pins) if (isPower(pn.nets[0])) power((pn.x + 0.5) * cs, (pn.y + 0.5) * cs, pn.out, pn.nets[0]);
       return;
     }
     if (m.kind === 'cap') {
-      R(wx + 11 * k, wy + 4 * k, 2 * k, 8 * k, S.device, m.net); R(wx + 4 * k, wy + 12 * k, 16 * k, 2 * k, S.device, m.net); R(wx + 4 * k, wy + 16 * k, 16 * k, 2 * k, S.device, 1);
-      power(wx + 12 * k, wy + 18 * k, [0, 1], 1, k);
+      Rl(11 * k, 4 * k, 2 * k, 8 * k, S.device, m.net); Rl(4 * k, 12 * k, 16 * k, 2 * k, S.device, m.net); Rl(4 * k, 16 * k, 16 * k, 2 * k, S.device, 1);
+      power(12 * k, 18 * k, [0, 1], 1);
       return;
     }
     if (m.kind === 'clk') {
-      for (const [x, y, w, h] of [[2, 4, 2, 16], [2, 4, 34, 2], [2, 18, 34, 2], [36, 4, 2, 16]]) R(wx + x * k, wy + y * k, w * k, h * k, S.frame);
-      for (const [x, y, w, h] of [[6, 14, 6, 2], [11, 8, 2, 8], [11, 8, 8, 2], [18, 8, 2, 8], [18, 14, 8, 2], [25, 8, 2, 8], [25, 8, 6, 2], [31, 11, 7, 2]]) R(wx + x * k, wy + y * k, w * k, h * k, S.device, m.net);
-      label(wx + 20 * k, wy + 2 * k, 7 * k, parentLod, 2, m.name);
+      for (const [x, y, w, h] of [[2, 4, 2, 16], [2, 4, 34, 2], [2, 18, 34, 2], [36, 4, 2, 16]]) Rl(x * k, y * k, w * k, h * k, S.frame);
+      for (const [x, y, w, h] of [[6, 14, 6, 2], [11, 8, 2, 8], [11, 8, 8, 2], [18, 8, 2, 8], [18, 14, 8, 2], [25, 8, 2, 8], [25, 8, 6, 2], [31, 11, 7, 2]]) Rl(x * k, y * k, w * k, h * k, S.device, m.net);
+      Lbl(20 * k, 2 * k, 7 * k, parentLod, 2, m.name);
       return;
     }
     // module or memory box
     const fr = Math.max(1, 2 * k);
-    R(wx, wy, ww, wh, S.box);
-    R(wx, wy, ww, fr, S.frame); R(wx, wy + wh - fr, ww, fr, S.frame); R(wx, wy, fr, wh, S.frame); R(wx + ww - fr, wy, fr, wh, S.frame);
-    boxes.push({p: m.path, m: m.name, r: [Math.round(wx), Math.round(wy), Math.round(ww), Math.round(wh)], d: depth, h: depth <= 1 ? 1 : 0});
-    // labels as large as the box allows, so block names stay readable from far away
+    Rl(0, 0, ww, wh, S.box);
+    Rl(0, 0, ww, fr, S.frame); Rl(0, wh - fr, ww, fr, S.frame); Rl(0, 0, fr, wh, S.frame); Rl(ww - fr, 0, fr, wh, S.frame);
+    boxes.push({p: m.path, m: m.name, r: [Math.round(ox), Math.round(oy), Math.round(ww), Math.round(wh)], d: depth, h: depth <= 1 ? 1 : 0});
+    // labels as large as the box allows, so block names stay readable from far away; the
+    // title stays at the top left of the box on screen even when the box is mirrored
     const titleSize = Math.max(11 * k, Math.min(0.16 * Math.min(ww, wh), ww * 0.8 / (m.name.length * 0.62 + 1)));
-    label(wx + 4 * k + titleSize * 0.2, wy + titleSize * 1.05, titleSize, parentLod, 0, m.name);
-    const nL = m.pins.filter(p => p.x === 0).length, nR = m.pins.length - nL;
+    label(ox + 4 * k + titleSize * 0.2, oy + titleSize * 1.05, titleSize, parentLod, 0, m.name);
+    const count = sd => Math.max(1, m.pins.filter(p => p.side === sd).length);
     for (const pn of m.pins) {
       const id = idFor(pn.nets), real = pn.nets.filter(n => !isPower(n)).length;
-      const px = wx + (pn.x + 0.5) * cs, py = wy + (pn.y + 0.5) * cs;
+      const px = (pn.x + 0.5) * cs, py = (pn.y + 0.5) * cs;
       lod = lodCode(parentLod);
-      R(px - 3 * k, py - 3 * k, 6 * k, 6 * k, S.pin, id);
-      if (!real && pn.nets.length) power(px, py, pn.out, pn.nets[0], k);
+      Rl(px - 3 * k, py - 3 * k, 6 * k, 6 * k, S.pin, id);
+      if (!real && pn.nets.length) power(px, py, pn.out, pn.nets[0]);
       const text = pn.name + (pn.nets.length > 1 ? `[${pn.nets.length}]` : '');
-      const gap = (m.h - (m.mt || 3) - 1) / Math.max(1, pn.x === 0 ? nL : nR) * cs, room = ((pn.x === 0 ? m.ml : m.mr) || 4) * cs;
-      const ps = Math.max(8 * k, Math.min(gap * 0.6, room / (text.length * 0.62 + 1.5)));
-      label(pn.x === 0 ? px + 6 * k : px - 6 * k, py + ps * 0.35, ps, own, pn.x === 0 ? 0 : 1, text);
+      const vert = pn.side === 'L' || pn.side === 'R';
+      const gap = (vert ? (m.h - m.margin.T - 1) / count(pn.side) : (m.w - 4) / count(pn.side)) * cs;
+      const room = (vert ? m.margin[pn.side] * cs : gap * 0.9);
+      const size = Math.max(8 * k, Math.min(gap * (vert ? 0.6 : 0.45), room / (text.length * 0.62 + 1.5), 16 * k));
+      // label inside the box next to the pin, wherever the pin ended up after mirroring
+      const [wx, wy] = Pt(px, py);
+      if (vert) { const left = (pn.side === 'L') !== fx; label(left ? wx + 6 * k : wx - 6 * k, wy + size * 0.35, size, own, left ? 0 : 1, text); }
+      else { const top = (pn.side === 'T') !== fy; label(wx, top ? wy + 6 * k + size * 0.9 : wy - 6 * k, size, own, 2, text); }
     }
     lod = lodCode(own);
-    const cc = c => [wx + ((c % m.w) + 0.5) * cs, wy + (((c / m.w) | 0) + 0.5) * cs];
+    const cc = c => [((c % m.w) + 0.5) * cs, (((c / m.w) | 0) + 0.5) * cs];
+    const seg = (ax, ay, bx, by, t, layer, id) => Rl(Math.min(ax, bx) - t / 2, Math.min(ay, by) - t / 2, Math.abs(ax - bx) + t, Math.abs(ay - by) + t, layer, id);
     for (const g of m.groups || []) {
       const id = idFor(g.nets), t = widthOf(g.nets.length, cs), layer = g.nets.length > 1 ? S.bus : S.wire;
       const deg = new Map();
@@ -486,9 +577,9 @@ export function buildSchematic(circuit, opts = {}) {
         const flush = (i0, i1) => {
           if (i1 <= i0) return;
           const a = p[i0] >> 1, b = p[i1] >> 1, [ax, ay] = cc(a), [bx, by] = cc(b);
-          R(Math.min(ax, bx) - t / 2, Math.min(ay, by) - t / 2, Math.abs(ax - bx) + t, Math.abs(ay - by) + t, layer, id);
+          seg(ax, ay, bx, by, t, layer, id);
           const len = Math.abs(ax - bx) + Math.abs(ay - by);
-          if (!best || len > best[2]) best = [(ax + bx) / 2, (ay + by) / 2, len];
+          if (!best || len > best[2]) best = [...Pt((ax + bx) / 2, (ay + by) / 2), len];
           for (const c of [a, b]) deg.set(c, (deg.get(c) || 0) + 1);
         };
         for (let i = 1; i < p.length; i++) {
@@ -497,24 +588,26 @@ export function buildSchematic(circuit, opts = {}) {
         }
         flush(run, p.length - 1);
       }
-      for (const [c, d] of deg) if (d >= 3) { const [x, y] = cc(c); R(x - t / 2 - 2 * k, y - t / 2 - 2 * k, t + 4 * k, t + 4 * k, layer, id); }
+      for (const [c, d] of deg) if (d >= 3) { const [x, y] = cc(c); Rl(x - t / 2 - 2 * k, y - t / 2 - 2 * k, t + 4 * k, t + 4 * k, layer, id); }
       if (id >= nets && best && (!groups[id - nets].seg || best[2] > groups[id - nets].seg[2])) groups[id - nets].seg = [...best, own];
     }
     if (m.kind === 'mem') return;
     for (const c of m.children) {
-      const cx = wx + c.x * cs, cy = wy + c.y * cs, ccs = cs * c.s;
+      const ccs = cs * c.s, x0 = c.x * cs, y0 = c.y * cs, cw = c.w * ccs, chh = c.h * ccs;
       // a scaled child's pin is not exactly on the parent grid: short connector along the edge
-      if (c.ppins !== c.pins) for (const pp of c.ppins) {
-        const id = idFor(pp.nets);
-        const y0 = cy + (pp.y + 0.5) * cs, y1 = cy + (pp.src.y + 0.5) * ccs, x = cx + (pp.x + 0.5) * cs, x1 = cx + (pp.src.x + 0.5) * ccs;
-        const t = widthOf(pp.nets.length, ccs);
-        R(Math.min(x, x1) - t / 2, Math.min(y0, y1) - t / 2, Math.abs(x - x1) + t, Math.abs(y0 - y1) + t, pp.nets.length > 1 ? S.bus : S.wire, id);
+      if (isBox(c)) for (const pp of c.ppins) {
+        const id = idFor(pp.nets), t = widthOf(pp.nets.length, ccs), layer = pp.nets.length > 1 ? S.bus : S.wire;
+        const ax = x0 + (pp.x + 0.5) * cs, ay = y0 + (pp.y + 0.5) * cs;
+        const sx = (pp.src.x + 0.5) * ccs, sy = (pp.src.y + 0.5) * ccs;
+        const bx = x0 + (c.fx ? cw - sx : sx), by = y0 + (c.fy ? chh - sy : sy);
+        seg(ax, ay, bx, ay, t, layer, id); seg(bx, ay, bx, by, t, layer, id);
       }
-      emit(c, cx, cy, ccs, own, depth + 1);
+      const [wx0, wy0] = [fx ? ox + ww - x0 - cw : ox + x0, fy ? oy + wh - y0 - chh : oy + y0];
+      emit(c, {ox: wx0, oy: wy0, cs: ccs, fx: fx !== c.fx, fy: fy !== c.fy}, own, depth + 1);
       lod = lodCode(own);
     }
   }
-  emit(root, 0, 0, topCell, 1e12, 0);
+  emit(root, {ox: 0, oy: 0, cs: topCell, fx: false, fy: false}, 1e12, 0);
 
   let total = 0;
   for (const a of byLayer) total += a.length;
