@@ -1,0 +1,85 @@
+// FetLoom TD4 — the 4-bit teaching CPU from 渡波郁『CPUの創りかた』
+// Registers A, B, OUT, PC (4 bit) + carry flag, 16-byte program ROM, 4-bit input port.
+// Instruction = op[7:4] im[3:0]
+//   0000 ADD A,Im   0001 MOV A,B   0010 IN A    0011 MOV A,Im
+//   0100 MOV B,A    0101 ADD B,Im  0110 IN B    0111 MOV B,Im
+//   1001 OUT B      1011 OUT Im    1110 JNC Im  1111 JMP Im
+// Every instruction is "selected source + Im" through one 4-bit adder.
+
+module inv(a -> y) { Pmos(a, Vcc, y) Nmos(a, y, Gnd) }
+module buf(a -> y) { inv(a, _n) inv(_n, y) }
+module nand2(a, b -> y) { Pmos(a, Vcc, y) Pmos(b, Vcc, y) Nmos(a, y, _n) Nmos(b, _n, Gnd) }
+module and2(a, b -> y) { nand2(a, b, _n) inv(_n, y) }
+module and3(a, b, c -> y) { and2(a, b, _x) and2(_x, c, y) }
+module or2(a, b -> y) { inv(a, _na) inv(b, _nb) nand2(_na, _nb, y) }
+module xor2(a, b -> y) { nand2(a,b,_n0) nand2(a,_n0,_n1) nand2(b,_n0,_n2) nand2(_n1,_n2,y) }
+module mux2(s, a, b -> y) { inv(s,_ns) and2(_ns,a,_a) and2(s,b,_b) or2(_a,_b,y) }
+module mux4(s, a[4], b[4] -> y[4]) {
+  mux2(s, a[0], b[0], y[0]) mux2(s, a[1], b[1], y[1]) mux2(s, a[2], b[2], y[2]) mux2(s, a[3], b[3], y[3])
+}
+module pack4(a0, a1, a2, a3 -> y[4]) { buf(a0, y[0]) buf(a1, y[1]) buf(a2, y[2]) buf(a3, y[3]) }
+module fulladder(a, b, cin -> sum, cout) {
+  xor2(a, b, _x) xor2(_x, cin, sum)
+  nand2(a, b, _g) nand2(_x, cin, _p) nand2(_g, _p, cout)
+}
+module add4(a[4], b[4], cin -> y[4], cout) {
+  fulladder(a[0], b[0], cin, y[0], _c1)
+  fulladder(a[1], b[1], _c1, y[1], _c2)
+  fulladder(a[2], b[2], _c2, y[2], _c3)
+  fulladder(a[3], b[3], _c3, y[3], cout)
+}
+module inc4(a[4] -> y[4]) {
+  inv(a[0], y[0])
+  xor2(a[1], a[0], y[1]) and2(a[1], a[0], _c2)
+  xor2(a[2], _c2, y[2])  and2(a[2], _c2, _c3)
+  xor2(a[3], _c3, y[3])
+}
+
+module dlatch(d, en -> q) { Nmos(en, d, _s) Cap(_s) inv(_s, _n) inv(_n, q) }
+module dff(d, clk -> q) { inv(clk, _nclk) dlatch(d, _nclk, _m) dlatch(_m, clk, q) }
+module dffr(d, clk, reset -> q) { mux2(reset, d, Gnd, _d) dff(_d, clk, q) }
+module reg1e(d, en, clk, reset -> q) { mux2(en, q, d, _n) dffr(_n, clk, reset, q) }
+module reg4e(d[4], en, clk, reset -> q[4]) {
+  mux2(en, q[0], d[0], _n0) dffr(_n0, clk, reset, q[0])
+  mux2(en, q[1], d[1], _n1) dffr(_n1, clk, reset, q[1])
+  mux2(en, q[2], d[2], _n2) dffr(_n2, clk, reset, q[2])
+  mux2(en, q[3], d[3], _n3) dffr(_n3, clk, reset, q[3])
+}
+
+// instruction decoder: source select + register load enables
+module td4_decode(op[4], cf -> sel_a, sel_b, ld_a, ld_b, ld_out, ld_pc) {
+  inv(op[3], _n7) inv(op[2], _n6) inv(cf, _ncf)
+  or2(op[0], op[3], sel_a)
+  buf(op[1], sel_b)
+  and2(_n7, _n6, ld_a)
+  and2(_n7, op[2], ld_b)
+  and2(op[3], _n6, ld_out)
+  or2(op[0], _ncf, _jump_ok)
+  and3(op[3], op[2], _jump_ok, ld_pc)
+}
+
+module td4(clk, reset, in[4], rom_data[8] -> pc[4], out[4]) {
+  pack4(rom_data[4], rom_data[5], rom_data[6], rom_data[7], _op)
+  pack4(rom_data[0], rom_data[1], rom_data[2], rom_data[3], _im)
+  td4_decode(_op, _cf, _sel_a, _sel_b, _ld_a, _ld_b, _ld_out, _ld_pc)
+  // data selector: (sel_b, sel_a) = 00 A, 01 B, 10 IN, 11 zero
+  pack4(Gnd, Gnd, Gnd, Gnd, _zero)
+  mux4(_sel_a, _a, _b, _ab)
+  mux4(_sel_a, in, _zero, _iz)
+  mux4(_sel_b, _ab, _iz, _src)
+  add4(_src, _im, Gnd, _sum, _cout)
+  reg4e(_sum, _ld_a, clk, reset, _a)
+  reg4e(_sum, _ld_b, clk, reset, _b)
+  reg4e(_sum, _ld_out, clk, reset, out)
+  reg1e(_cout, Vcc, clk, reset, _cf)
+  inc4(pc, _pc_inc)
+  mux4(_ld_pc, _pc_inc, _sum, _pc_next)
+  reg4e(_pc_next, Vcc, clk, reset, pc)
+}
+
+module main(reset, in[4] -> out[4], pc[4], clk_out) {
+  Clk(4, _clk)
+  td4(_clk, reset, in, _rom, pc, out)
+  Rom("examples/td4_demo.hex", pc, _rom)
+  buf(_clk, clk_out)
+}
