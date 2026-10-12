@@ -5,6 +5,7 @@ import zlib from 'node:zlib';
 import {FetLoomSimulator} from '../src/sim.js';
 import {buildDie, layoutKey, LAYERS} from '../src/die.js';
 import {encodeDie, decodeDie} from '../src/die-format.js';
+import {resolveProbeNets, formatProbeValue, initializeDemo} from '../src/probes.js';
 import {EXAMPLES} from '../src/examples.js';
 import {buildSchematic, schematicKey, busValue, busText, SCH_LAYERS} from '../src/schematic.js';
 
@@ -24,10 +25,13 @@ function coreFor(c){
   };
 }
 
-for(const {file} of EXAMPLES){
+for(const {file,demo} of EXAMPLES){
   const ast=parseFetLoom(read(file));
   const c=elaborate(ast,'main');
   assert.ok(c.netNames.length>2,`${file}: nets`);
+  for(const name of demo.waves)assert.ok(resolveProbeNets(c,`main${name.startsWith('/')?'':'.'}${name}`).length);
+  for(const group of demo.groups??[])assert.ok(resolveProbeNets(c,typeof group==='string'?`main.${group}[*]`:group.signals).length);
+  for(const name of Object.keys(demo.inputs??{}))assert.ok(c.topInputs.some(p=>p.name===name));
   console.log(`${file}: ${c.netNames.length} nets, ${c.devices.length} MOS`);
 }
 
@@ -201,6 +205,25 @@ for(const f of ['inverter','fulladder','memory','counter4']){
     assert.equal(sch.header.format,'fetloom-sch');
     assert.equal(sch.header.stats.nets,elaborate(parseFetLoom(src),'main').netNames.length);
   }
+}
+
+
+// Numeric groups preserve bit order, precision, and unknown logic states.
+{
+  const c={netNames:['main.q[10]','main.q[2]','main.q[0]','main.flag'],nameToNet:new Map([['main.flag',3]])};
+  assert.deepEqual(resolveProbeNets(c,'main.q[*], main.flag'),[2,1,0,3]);
+  assert.throws(()=>resolveProbeNets(c,'main.missing[*]'),/not found/);
+  assert.throws(()=>resolveProbeNets(c,''),/Enter wire/);
+  assert.equal(formatProbeValue([0,1,2,3],n=>[1,0,1,1][n],'bin'),'0b1101');
+  assert.equal(formatProbeValue([0,1,2,3],n=>[1,0,1,1][n],'hex'),'0xD');
+  assert.equal(formatProbeValue([0,1,2,3],n=>[1,0,1,1][n],'dec'),'13');
+  assert.equal(formatProbeValue([0,1],n=>[1,2][n],'bin'),'0bZ1');
+  assert.equal(formatProbeValue([0,1],n=>[1,2][n],'hex'),'Z');
+  assert.equal(formatProbeValue([0,1],n=>[3,2][n],'dec'),'X');
+  assert.equal(formatProbeValue(Array.from({length:64},(_,i)=>i),()=>1,'dec'),'18446744073709551615');
+  const {sim,out,run}=await simFor('examples/counter4.fetl');
+  initializeDemo(sim,EXAMPLES.find(e=>e.file==='examples/counter4.fetl').demo);
+  assert.equal(out('q'),0);run(8);assert.equal(out('q'),1);
 }
 
 console.log('all tests passed');

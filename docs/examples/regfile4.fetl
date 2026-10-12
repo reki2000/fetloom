@@ -1,0 +1,49 @@
+// FetLoom 4 x 4-bit register file
+// Write: address decoder (2-to-4) + per-register write enable, rising clock edge.
+// Read: asynchronous 4:1 mux tree.
+
+module inv(a -> y) { Pmos(a, Vcc, y) Nmos(a, y, Gnd) }
+module buf(a -> y) { inv(a, _n) inv(_n, y) }
+module nand2(a, b -> y) { Pmos(a, Vcc, y) Pmos(b, Vcc, y) Nmos(a, y, _n) Nmos(b, _n, Gnd) }
+module and2(a, b -> y) { nand2(a, b, _n) inv(_n, y) }
+module or2(a, b -> y) { inv(a, _na) inv(b, _nb) nand2(_na, _nb, y) }
+module mux2(s, a, b -> y) { inv(s,_ns) and2(_ns,a,_a) and2(s,b,_b) or2(_a,_b,y) }
+module mux4(s, a[4], b[4] -> y[4]) {
+  mux2(s, a[0], b[0], y[0]) mux2(s, a[1], b[1], y[1]) mux2(s, a[2], b[2], y[2]) mux2(s, a[3], b[3], y[3])
+}
+
+module dlatch(d, en -> q) { Nmos(en, d, _s) Cap(_s) inv(_s, _n) inv(_n, q) }
+module dff(d, clk -> q) { inv(clk, _nclk) dlatch(d, _nclk, _m) dlatch(_m, clk, q) }
+module dffr(d, clk, reset -> q) { mux2(reset, d, Gnd, _d) dff(_d, clk, q) }
+module reg4e(d[4], en, clk, reset -> q[4]) {
+  mux2(en, q[0], d[0], _n0) dffr(_n0, clk, reset, q[0])
+  mux2(en, q[1], d[1], _n1) dffr(_n1, clk, reset, q[1])
+  mux2(en, q[2], d[2], _n2) dffr(_n2, clk, reset, q[2])
+  mux2(en, q[3], d[3], _n3) dffr(_n3, clk, reset, q[3])
+}
+
+module decoder2to4(a0, a1 -> d0, d1, d2, d3) {
+  inv(a0, _n0) inv(a1, _n1)
+  and2(_n0, _n1, d0)
+  and2(a0, _n1, d1)
+  and2(_n0, a1, d2)
+  and2(a0, a1, d3)
+}
+
+module regfile4(clk, reset, we, waddr[2], raddr[2], din[4] -> dout[4]) {
+  decoder2to4(waddr[0], waddr[1], _w0, _w1, _w2, _w3)
+  and2(we, _w0, _e0) and2(we, _w1, _e1) and2(we, _w2, _e2) and2(we, _w3, _e3)
+  reg4e(din, _e0, clk, reset, _r0)
+  reg4e(din, _e1, clk, reset, _r1)
+  reg4e(din, _e2, clk, reset, _r2)
+  reg4e(din, _e3, clk, reset, _r3)
+  mux4(raddr[0], _r0, _r1, _m0)
+  mux4(raddr[0], _r2, _r3, _m1)
+  mux4(raddr[1], _m0, _m1, dout)
+}
+
+module main(we, waddr[2], raddr[2], din[4], reset -> dout[4], clk_out) {
+  Clk(4, _clk)
+  regfile4(_clk, reset, we, waddr, raddr, din, dout)
+  buf(_clk, clk_out)
+}

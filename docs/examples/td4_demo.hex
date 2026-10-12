@@ -1,0 +1,6 @@
+# TD4 demo: OUT counts up forever
+# 01  ADD A,1
+# 40  MOV B,A
+# 90  OUT B
+# F0  JMP 0
+01 40 90 F0

@@ -1,0 +1,11 @@
+# 4004 demo program
+# D1       LDM 1
+# B0       XCH R0
+# D5       LDM 5
+# B1       XCH R1
+# A0       LD R0
+# 81       ADD R1
+# E2       WRR
+# 60       INC R0
+# 40 04    JUN 0x004
+D1 B0 D5 B1 A0 81 E2 60 40 04

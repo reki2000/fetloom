@@ -1,0 +1,27 @@
+module inv(a -> y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+
+// Dynamic level-sensitive latch. Cap is the only state primitive here.
+module dlatch(d, en -> q) {
+  Nmos(en, d, _stored)
+  Cap(_stored)
+  inv(_stored, _n)
+  inv(_n, q)
+}
+
+// Two latches form an edge-oriented register.
+module dff(d, clk -> q) {
+  inv(clk, _nclk)
+  dlatch(d, _nclk, _master)
+  dlatch(_master, clk, q)
+}
+
+module main(d -> q, clk_out) {
+  Clk(8, _clk)
+  dff(d, _clk, q)
+  // buffer clock to make it visible as an output
+  inv(_clk, _n)
+  inv(_n, clk_out)
+}

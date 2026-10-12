@@ -35,13 +35,13 @@ void main() {
   gl_Position = vec4((p + uShift) * uScale, 0.0, 1.0);
   vec4 c = uColor;
   int net = aInfo.y, flags = (aInfo.x >> 8) & 255;
-  if (uVoltage == 1 && uMono == 0 && net >= 0) {
+  if (uVoltage == 1 && net >= 0) {
     uint v = texelFetch(uVals, ivec2(net & 1023, net >> 10), 0).r;
     if (flags == ${FLAG_NCH} || flags == ${FLAG_PCH}) {
       bool on = (flags == ${FLAG_NCH} && v == 1u) || (flags == ${FLAG_PCH} && v == 0u);
       c = on ? vec4(0.25, 1.0, 0.45, 0.95) : vec4(0.06, 0.07, 0.08, 0.9);
     } else {
-      c = vec4(mix(level(v), uColor.rgb, 0.18), net < 2 ? uColor.a : max(uColor.a, 0.6)); // supply rails stay subdued
+      c = vec4(level(v), net < 2 ? uColor.a : 0.9); // supply rails stay subdued
     }
   }
   vColor = c;
@@ -87,6 +87,10 @@ export class DieView {
     this.maskOnly = [blocksChk, shortsChk, maskSel, legend];
     const bar = el('div', {class:'toolbar wrap'}, this.modeSel, chk('Voltage', true, v => { this.voltage = v; }),
       blocksChk, shortsChk, maskSel, el('button', {onclick: () => this.fit()}, 'Fit'), this.statusEl);
+    const voltageLegend = el('span', {class:'voltage-legend', title:'Live wire logic levels'},
+      el('span', {style:'color:#ff4d29'}, '● High (1)'), el('span', {style:'color:#2166ff'}, '● Low (0)'),
+      el('span', {style:'color:#8c949e'}, '● Z'), el('span', {style:'color:#eb38f2'}, '● X'));
+    bar.append(voltageLegend);
     this.wrap = el('div', {class:'die-canvas'});
     this.canvas = el('canvas'); this.overlay = el('canvas', {class:'die-overlay'});
     this.wrap.append(this.canvas, this.overlay);

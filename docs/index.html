@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FetLoom — MOS switch-level simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div><strong>FetLoom</strong><span> .fetl MOS switch-level DSL / simulator</span></div>
+  <div id="status">loading…</div>
+</header>
+<main>
+  <section class="editor-pane">
+    <div class="toolbar wrap">
+      <select id="example"></select>
+      <button id="loadExample">Load example</button>
+      <label class="file-btn">Open .fetl<input id="file" type="file" accept=".fetl,text/plain"></label>
+      <button id="compile" class="primary">Compile</button>
+      <button id="syntax" aria-expanded="false" aria-controls="syntaxGuide">Syntax</button>
+    </div>
+    <textarea id="source" spellcheck="false" aria-label="FetLoom source"></textarea>
+    <pre id="errors" aria-live="polite"></pre>
+  </section>
+
+  <section class="sim-pane">
+    <div class="toolbar wrap">
+      <label>Top <select id="topModule"></select></label>
+      <button id="reset">Reset</button>
+      <button id="step">Step</button>
+      <button id="run" class="primary">Run</button>
+      <label>ticks/frame <input id="speed" type="number" min="1" max="1000" value="4"></label>
+      <span id="tick">tick 0</span>
+    </div>
+    <div id="inputs" class="inputs"></div>
+    <p id="demoHint" class="hint demo-hint"></p>
+    <div class="toolbar wrap">
+      <div class="tabs" role="tablist">
+        <button id="tabSchematic" class="tab active" role="tab">Schematic</button>
+        <button id="tabDie" class="tab" role="tab">Die layout</button>
+      </div>
+      <label>View <select id="view"></select></label>
+      <span class="hint" id="viewHint">double-click a module to drill in; click a wire/port to probe</span>
+    </div>
+    <div id="schematic" class="schematic"></div>
+    <div id="die" hidden></div>
+  </section>
+
+  <section class="probe-pane">
+    <div class="toolbar wrap">
+      <strong>Probe</strong>
+      <input id="probeSearch" placeholder="wire name">
+      <select id="probeNet"></select>
+      <button id="addProbe">Add</button>
+      <button id="clearProbe">Clear</button>
+    </div>
+    <div id="probeLabels"></div>
+    <canvas id="wave" width="1200" height="260"></canvas>
+    <div class="toolbar wrap">
+      <strong>Numeric groups</strong>
+      <input id="groupName" placeholder="Label (optional)" aria-label="Group label">
+      <input id="groupSignals" placeholder="main.q[*] or main.sum, main.cout" aria-label="Group signals">
+      <button id="addGroup">Add group</button>
+      <button id="clearGroups">Clear groups</button>
+    </div>
+    <p class="hint group-hint">Comma-separated signals, least significant bit first. [*] selects a bus in bit-index order. Values are unsigned; X/Z stay visible.</p>
+    <p id="groupError" role="alert"></p>
+    <div id="numericGroups" aria-live="off"></div>
+  </section>
+  <section id="syntaxGuide" class="syntax-pane" aria-labelledby="syntaxTitle" hidden>
+    <div class="toolbar wrap">
+      <strong id="syntaxTitle">.fetl syntax</strong>
+      <button id="closeSyntax">Back to simulation</button>
+    </div>
+    <article class="syntax-content">
+      <h2>Modules and connections</h2>
+      <p>Define a module with inputs before <code>-&gt;</code> and outputs after it. Calls connect ports in their declared order: inputs, then outputs. Semicolons are optional.</p>
+      <pre><code>module inv(a -&gt; y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+
+module main(a -&gt; y) {
+  inv(a, y)
+}</code></pre>
+      <p>Module names use lowercase or snake_case. Select the top module in the simulator; examples use <code>main</code>. The arrow can be omitted when a module has no outputs.</p>
+      <h2>Signals and buses</h2>
+      <p>Ports name the module's signals. Names starting with <code>_</code> create local wires without a declaration. Other undeclared signal names are errors. <code>Vcc</code> and <code>Gnd</code> are global logic 1 and 0.</p>
+      <pre><code>module and2(a, b -&gt; y) {
+  nand2(a, b, _n)
+  inv(_n, y)
+}</code></pre>
+      <p>Declare a bus with its width, such as <code>a[4]</code>. In a call, <code>a</code> connects the whole bus and <code>a[0]</code> selects a bit. Bit 0 is least significant. Local bus widths are inferred from connected ports; first use a local bus where its width is known.</p>
+      <pre><code>module invert4(a[4] -&gt; y[4]) {
+  inv(a[0], y[0])
+  inv(a[1], y[1])
+  inv(a[2], y[2])
+  inv(a[3], y[3])
+}</code></pre>
+      <h2>Built-in elements</h2>
+      <div class="syntax-table"><table>
+        <thead><tr><th>Syntax</th><th>Behavior</th></tr></thead>
+        <tbody>
+          <tr><td><code>Nmos(gate, a, b)</code></td><td>Connects a and b when gate is 1.</td></tr>
+          <tr><td><code>Pmos(gate, a, b)</code></td><td>Connects a and b when gate is 0.</td></tr>
+          <tr><td><code>Cap(net)</code></td><td>Retains the last stable 0/1 when undriven.</td></tr>
+          <tr><td><code>Clk(halfPeriod, out)</code></td><td>Square wave; halfPeriod is measured in ticks.</td></tr>
+          <tr><td><code>Rom("file.hex", addr, data)</code></td><td>Asynchronous ROM read from hexadecimal bytes.</td></tr>
+          <tr><td><code>Ram(addr, din, dout, we, clk)</code></td><td>Asynchronous read; writes on a rising clock edge when we is 1. Input and output data widths must match.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Gates, adders, multiplexers, and registers are user modules built from these elements.</p>
+      <h2>Comments and values</h2>
+      <pre><code>// Line comment
+# Another line comment
+/* Block comment */</code></pre>
+      <p>Numeric arguments accept decimal or hexadecimal integers, such as <code>8</code> or <code>0x10</code>. File paths use double quotes. Nets carry <code>0</code>, <code>1</code>, <code>Z</code> (undriven), or <code>X</code> (unknown/conflicting).</p>
+      <p>Write connections as calls; expressions, assignments, loops, and imports are not supported. <code>main.q[*]</code> is a numeric-group selector in the UI, not .fetl source syntax.</p>
+      <p><a href="documentation/SPEC.md" target="_blank" rel="noopener">Full language specification</a></p>
+    </article>
+  </section>
+</main>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

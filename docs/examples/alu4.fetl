@@ -1,0 +1,66 @@
+// FetLoom 4-bit ALU
+// op: 0=ADD 1=SUB 2=AND 3=XOR (decoded by a 2-to-4 decoder written in FetLoom)
+// carry: ADD carry-out / SUB "no borrow" (a >= b). zero: y == 0.
+
+module inv(a -> y) { Pmos(a, Vcc, y) Nmos(a, y, Gnd) }
+module nand2(a, b -> y) { Pmos(a, Vcc, y) Pmos(b, Vcc, y) Nmos(a, y, _n) Nmos(b, _n, Gnd) }
+module nor2(a, b -> y) { Pmos(a, Vcc, _p) Pmos(b, _p, y) Nmos(a, y, Gnd) Nmos(b, y, Gnd) }
+module and2(a, b -> y) { nand2(a, b, _n) inv(_n, y) }
+module or2(a, b -> y) { nor2(a, b, _n) inv(_n, y) }
+module or3(a, b, c -> y) { or2(a, b, _x) or2(_x, c, y) }
+module xor2(a, b -> y) { nand2(a,b,_n0) nand2(a,_n0,_n1) nand2(b,_n0,_n2) nand2(_n1,_n2,y) }
+module fulladder(a, b, cin -> sum, cout) {
+  xor2(a, b, _x) xor2(_x, cin, sum)
+  nand2(a, b, _g) nand2(_x, cin, _p) nand2(_g, _p, cout)
+}
+
+module decoder2to4(a0, a1 -> d0, d1, d2, d3) {
+  inv(a0, _n0) inv(a1, _n1)
+  and2(_n0, _n1, d0)
+  and2(a0, _n1, d1)
+  and2(_n0, a1, d2)
+  and2(a0, a1, d3)
+}
+
+module add4(a[4], b[4], cin -> y[4], cout) {
+  fulladder(a[0], b[0], cin, y[0], _c1)
+  fulladder(a[1], b[1], _c1, y[1], _c2)
+  fulladder(a[2], b[2], _c2, y[2], _c3)
+  fulladder(a[3], b[3], _c3, y[3], cout)
+}
+
+module xor4s(a[4], s -> y[4]) {
+  xor2(a[0], s, y[0]) xor2(a[1], s, y[1]) xor2(a[2], s, y[2]) xor2(a[3], s, y[3])
+}
+module and4b(a[4], b[4] -> y[4]) {
+  and2(a[0], b[0], y[0]) and2(a[1], b[1], y[1]) and2(a[2], b[2], y[2]) and2(a[3], b[3], y[3])
+}
+module xor4b(a[4], b[4] -> y[4]) {
+  xor2(a[0], b[0], y[0]) xor2(a[1], b[1], y[1]) xor2(a[2], b[2], y[2]) xor2(a[3], b[3], y[3])
+}
+
+// one-hot result selector
+module sel3(e0, x0, e1, x1, e2, x2 -> y) {
+  and2(e0, x0, _a) and2(e1, x1, _b) and2(e2, x2, _c) or3(_a, _b, _c, y)
+}
+
+module zero4(a[4] -> z) { nor2(a[0], a[1], _l) nor2(a[2], a[3], _h) and2(_l, _h, z) }
+
+module alu4(a[4], b[4], op[2] -> y[4], carry, zero) {
+  decoder2to4(op[0], op[1], _add, _sub, _and, _xor)
+  or2(_add, _sub, _arith)
+  xor4s(b, _sub, _bx)
+  add4(a, _bx, _sub, _sum, _cout)
+  and4b(a, b, _andv)
+  xor4b(a, b, _xorv)
+  sel3(_arith, _sum[0], _and, _andv[0], _xor, _xorv[0], y[0])
+  sel3(_arith, _sum[1], _and, _andv[1], _xor, _xorv[1], y[1])
+  sel3(_arith, _sum[2], _and, _andv[2], _xor, _xorv[2], y[2])
+  sel3(_arith, _sum[3], _and, _andv[3], _xor, _xorv[3], y[3])
+  and2(_arith, _cout, carry)
+  zero4(y, zero)
+}
+
+module main(a[4], b[4], op[2] -> y[4], carry, zero) {
+  alu4(a, b, op, y, carry, zero)
+}

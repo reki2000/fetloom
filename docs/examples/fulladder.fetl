@@ -1,0 +1,26 @@
+module inv(a -> y) {
+  Pmos(a, Vcc, y)
+  Nmos(a, y, Gnd)
+}
+module nand2(a, b -> y) {
+  Pmos(a, Vcc, y)
+  Pmos(b, Vcc, y)
+  Nmos(a, y, _0)
+  Nmos(b, _0, Gnd)
+}
+module and2(a, b -> y) { nand2(a, b, _0) inv(_0, y) }
+module or2(a, b -> y) { inv(a, _na) inv(b, _nb) nand2(_na, _nb, y) }
+module xor2(a, b -> y) {
+  nand2(a, b, _n0)
+  nand2(a, _n0, _n1)
+  nand2(b, _n0, _n2)
+  nand2(_n1, _n2, y)
+}
+module fulladder(a, b, cin -> sum, cout) {
+  xor2(a, b, _x)
+  xor2(_x, cin, sum)
+  and2(a, b, _c0)
+  and2(_x, cin, _c1)
+  or2(_c0, _c1, cout)
+}
+module main(a, b, cin -> sum, cout) { fulladder(a, b, cin, sum, cout) }
