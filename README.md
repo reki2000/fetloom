@@ -2,15 +2,7 @@
 
 A browser-based MOS switch-level circuit simulator. Write circuits in `.fetl` and combine modules to build anything from an inverter to a CPU.
 
-## Run locally
-
-From the repository root:
-
-```bash
-python3 -m http.server 8000
-```
-
-Open [localhost:8000](http://localhost:8000/). No package installation is needed; the WASM core is already built. Use HTTP rather than opening the HTML file directly so the browser can load WASM and ROM files. Stop the server with `Ctrl+C`.
+[Open FetLoom](https://reki2000.github.io/fetloom/)
 
 ## Try an example
 
@@ -47,24 +39,23 @@ module main(a -> y) {
 
 Built-in elements are `Nmos`, `Pmos`, `Vcc`, `Gnd`, `Cap`, `Clk`, `Rom`, and `Ram`. See the [language specification](documentation/SPEC.md) and [references](documentation/REFERENCES.md).
 
-## GitHub Pages
+## Development
 
-The site is published from the **main** branch's **/docs** folder. Generate the site before committing updates:
+From the repository root:
 
 ```bash
-npm run build
+python3 -m http.server 8000
 ```
 
-Commit the generated `docs/` files with the source changes. GitHub Pages deploys them when they reach main. To preview this build locally, run `python3 -m http.server 8000 --directory docs`.
-
-The build copies the UI, WASM, examples, layout caches, and documentation. Source documentation lives in `documentation/`; `docs/` is generated output.
-
-## Development
+Open [localhost:8000](http://localhost:8000/). No package installation is needed; the WASM core is already built. Use HTTP rather than opening the HTML file directly so the browser can load WASM and ROM files. Stop the server with `Ctrl+C`.
 
 Tests require Node.js; rebuilding WASM requires clang.
 
 ```bash
 npm test
+
+# Build the static site in docs/
+npm run build
 
 # Rebuild WASM
 (cd wasm && ./build.sh)
